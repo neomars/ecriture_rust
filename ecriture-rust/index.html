@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-screen bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Écriture - Studio d'Écriture de Romans</title>
+    <!-- Google Fonts for Premium Serif Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..700;1,400..700&family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Georgia font for premium, distraction-free writing */
+        .font-georgia {
+            font-family: Georgia, Cambria, "Times New Roman", Times, serif;
+        }
+        /* Contenteditable placeholder */
+        #editor-content:empty::before {
+            content: attr(data-placeholder);
+            color: #cbd5e1; /* slate-300 */
+            pointer-events: none;
+            position: absolute;
+        }
+        /* Custom scrollbar styles */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+
+    <style>
+        .page-break::after {
+            content: attr(data-content);
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 0 10px;
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            font-family: sans-serif;
+            font-style: italic;
+        }
+
+
+
+    </style>
+</head>
+
+<body class="h-screen overflow-hidden flex flex-col font-sans text-slate-800">
+
+    <!-- TOP HEADER -->
+    <header class="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-6 z-[9999] shrink-0">
+        <div class="flex items-center space-x-6">
+            <!-- App Logo / Icon -->
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl">✒️</span>
+                <h1 class="text-xl font-bold tracking-tight text-indigo-600" data-i18n="app_title">Écriture</h1>
+            </div>
+
+            <!-- Novel Selector -->
+            <div class="flex items-center space-x-2 border-l border-slate-200 pl-6">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider" data-i18n="novel_select">Roman</span>
+                <select id="project-select" onchange="switchProject(this.value)" class="bg-slate-50 border border-slate-300 text-slate-700 text-xs rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-1.5 font-bold cursor-pointer">
+                    <!-- Dynamically populated -->
+                </select>
+                <button onclick="openNewProjectModal()" class="text-indigo-600 hover:text-indigo-800 text-xs font-bold px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all flex items-center space-x-1">
+                    <span>➕</span>
+                    <span data-i18n="add_novel">Nouveau</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-4">
+
+            <!-- Language Selector -->
+            <div class="flex items-center space-x-2">
+                <span class="text-sm text-slate-500" data-i18n="select_language">Langue</span>
+                <select id="lang-select" onchange="changeLanguage(this.value)" class="bg-slate-50 border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-1">
+                    <option value="fr">Français</option>
+                    <option value="en">English</option>
+                    <option value="es">Español</option>
+                    <option value="ru">Русский</option>
+                </select>
+            </div>
+
+            <!-- Export with Format Dropdown -->
+            <div class="relative inline-block text-left" id="export-dropdown-wrapper">
+                <button onclick="toggleExportDropdown(event)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition-all flex items-center space-x-1">
+                    <span>📥</span>
+                    <span data-i18n="export_draft">Exporter</span>
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div id="export-dropdown-menu" class="hidden absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-[9999]">
+                    <button onclick="exportDraft('txt')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2">
+                        <span>📄</span>
+                        <span data-i18n="export_txt">Texte (.txt)</span>
+                    </button>
+                    <button onclick="exportDraft('docx')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2">
+                        <span>📘</span>
+                        <span data-i18n="export_docx">Word (.docx)</span>
+                    </button>
+                    <button onclick="exportDraft('odt')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2">
+                        <span>📝</span>
+                        <span data-i18n="export_odt">OpenDocument (.odt)</span>
+                    </button>
+                    <button onclick="exportDraft('epub')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2">
+                        <span>📱</span>
+                        <span data-i18n="export_epub">ePub (.epub)</span>
+                    </button>
+                    <button onclick="exportDraft('mobi')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2">
+                        <span>💾</span>
+                        <span data-i18n="export_mobi">Mobipocket (.mobi)</span>
+                    </button>
+                    <button onclick="exportDraft('pdf')" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 flex items-center space-x-2">
+                        <span>📕</span>
+                        <span data-i18n="export_pdf">PDF (.pdf)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Brainstorm Button -->
+            <button onclick="openBrainstormModal()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center space-x-1">
+                💡 <span data-i18n="brainstorm_btn">Ideas</span>
+            </button>
+
+            <!-- Extract Lore Button -->
+            <button onclick="extractLoreFromScene()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center space-x-1">
+                ✨ <span data-i18n="extract_lore_btn">Extract Lore</span>
+            </button>
+
+            <!-- Relecture Button -->
+            <button onclick="openRelectureModal()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all flex items-center space-x-1">
+                🔍 <span data-i18n="relecture_btn">Relecture</span>
+            </button>
+
+            <!-- Project Settings -->
+            <button onclick="openSettingsModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all">
+                ⚙️ <span data-i18n="project_settings">Paramètres</span>
+            </button>
+
+            <!-- Ko-fi Widget Widget -->
+            <div class="flex items-center">
+                <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
+                <script type='text/javascript'>
+                    kofiwidget2.init('Love Ecriture', '#72a4f2', 'C4K823HZ16');
+                    kofiwidget2.draw();
+                </script>
+            </div>
+
+            <!-- About Button -->
+            <button onclick="openAboutModal()" class="text-slate-400 hover:text-slate-600 transition-colors text-lg">
+                ❓
+            </button>
+
+            <!-- Window Controls: Minimize & Close -->
+            <div class="flex items-center space-x-1.5 border-l border-slate-200 pl-4 h-full">
+                </div>
+        </div>
+    </header>
+
+    <!-- MAIN BODY CONTAINER -->
+    <div class="flex flex-1 h-[calc(100vh-3.5rem)]">
+
+        <!-- LEFT SIDEBAR: MANUSCRIPT TREE & SEARCH -->
+        <aside class="w-64 bg-slate-100 border-r border-slate-200 flex flex-col h-full shrink-0">
+            <!-- Search Bar -->
+            <div class="p-3 border-b border-slate-200">
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-slate-400 text-sm">🔍</span>
+                    <input type="text" id="search-input" oninput="filterTree(this.value)" data-i18n-placeholder="search_placeholder" placeholder="Rechercher..." class="w-full bg-white border border-slate-300 rounded-lg py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+            </div>
+
+            <!-- Project Title Display -->
+            <div class="px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-200/50 bg-slate-50" id="project-title-display">
+                Mon Roman
+            </div>
+
+            <!-- Scrollable Tree Structure -->
+            <div class="flex-1 overflow-y-auto px-2 py-3 space-y-4" id="sidebar-tree">
+                <!-- Collapsible manuscript tree container -->
+                <div>
+                    <div class="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider px-2 py-1 select-none">
+                        <span data-i18n="manuscript">Manuscrit</span>
+                    </div>
+                    <div id="manuscript-nodes-list" class="space-y-1 mt-1">
+                        <!-- Dynamic Chapters and Scenes -->
+                    </div>
+                </div>
+
+                <!-- Plot Grid Toggle Button -->
+                <div onclick="selectPlotGrid()" id="plot-grid-menu-item" class="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 cursor-pointer transition-all">
+                    <span>📊</span>
+                    <span data-i18n="plot_grid">Grille d'intrigue</span>
+                </div>
+
+                <!-- Characters Group -->
+                <div>
+                    <div class="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider px-2 py-1 select-none">
+                        <span data-i18n="characters">Personnages</span>
+                    </div>
+                    <div id="characters-list" class="space-y-1 mt-1">
+                        <!-- Dynamic Characters -->
+                    </div>
+                </div>
+
+                <!-- Story Notes Group -->
+                <div>
+                    <div class="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider px-2 py-1 select-none">
+                        <span data-i18n="story_notes">Notes de récit</span>
+                    </div>
+                    <div id="notes-list" class="space-y-1 mt-1">
+                        <!-- Dynamic Notes -->
+                    </div>
+                </div>
+
+                <!-- Annotation Group -->
+                <div>
+                    <div class="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider px-2 py-1 select-none">
+                        <span data-i18n="annotation_title">Annotation</span>
+                    </div>
+                    <div id="annotations-list" class="space-y-1 mt-1">
+                        <!-- Dynamic Annotations -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- QUICK ACTIONS FOOTER -->
+            <div class="p-3 bg-slate-50 border-t border-slate-200 grid grid-cols-3 gap-1 shrink-0">
+                <button onclick="addNewChapter()" class="bg-blue-500 hover:bg-blue-600 text-white py-1.5 px-1 rounded text-xs font-bold shadow-sm transition-all" data-i18n="add_chapter">+ Chapitre</button>
+                <button onclick="addNewScene()" class="bg-emerald-500 hover:bg-emerald-600 text-white py-1.5 px-1 rounded text-xs font-bold shadow-sm transition-all" data-i18n="add_scene">+ Scène</button>
+                <div class="relative">
+                    <button onclick="showAssetMenu(); event.stopPropagation();" class="w-full h-full bg-purple-500 hover:bg-purple-600 text-white py-1.5 px-1 rounded text-xs font-bold shadow-sm transition-all flex items-center justify-center">
+                        <span data-i18n="add_asset">+ Ressource</span>
+                    </button>
+                    <!-- Dropdown for Asset creation -->
+                    <div id="asset-menu-dropdown" class="hidden absolute bottom-12 left-0 w-44 bg-white border border-slate-200 rounded-lg shadow-xl py-1 text-slate-700 z-20 text-left">
+                        <button onclick="addNewCharacter(); event.stopPropagation();" class="w-full px-3 py-2 hover:bg-slate-100 text-xs font-semibold flex items-center space-x-1.5 text-left">
+                            <span>👤</span> <span data-i18n="add_character">Ajouter personnage</span>
+                        </button>
+                        <button onclick="addNewNote(); event.stopPropagation();" class="w-full px-3 py-2 hover:bg-slate-100 text-xs font-semibold flex items-center space-x-1.5 text-left">
+                            <span>📌</span> <span data-i18n="add_note">Ajouter note</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- CENTRAL WORKSPACE (Occupies full height and expands elegantly) -->
+        <main class="flex-1 h-full min-w-0 min-h-0 bg-white flex flex-col relative">
+
+
+
+            <!-- AI Contextual Tool Result Preview Card -->
+            <div id="ai-preview-card" class="hidden absolute bg-white border border-slate-200 rounded-xl shadow-2xl p-4 w-[450px] z-[9999] transition-all duration-200">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center space-x-1">
+                        <span>🤖</span>
+                        <span id="ai-preview-tool-title">Assistant IA</span>
+                    </span>
+                    <button onclick="closeAiPreview()" class="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
+                </div>
+
+                <!-- Loading Animation -->
+                <div id="ai-preview-loading" class="hidden py-6 flex flex-col items-center justify-center space-y-2">
+                    <div class="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                    <span class="text-xs text-slate-400 animate-pulse" data-i18n="ai_writing">L'IA rédige votre texte...</span>
+                </div>
+
+                <!-- Text Result Area -->
+                <div id="ai-preview-result-container" class="max-h-60 overflow-y-auto bg-slate-50 rounded-lg p-3 text-sm text-slate-800 leading-relaxed font-georgia whitespace-pre-wrap select-text mb-4 border border-slate-100">
+                </div>
+
+                <!-- UX Actions -->
+                <div id="ai-preview-actions" class="flex items-center justify-end space-x-2">
+                    <button id="ai-btn-cancel" onclick="closeAiPreview()" class="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all">
+                        <span data-i18n="btn_cancel">Annuler</span>
+                    </button>
+                    <button id="ai-btn-regenerate" onclick="regenerateAI()" class="px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-200 transition-all flex items-center space-x-1">
+                        <span>🔄</span>
+                        <span data-i18n="btn_regenerate">Régénérer</span>
+                    </button>
+                    <button id="ai-btn-apply" onclick="applyAiSuggestion()" class="px-3 py-1.5 bg-indigo-600 rounded-lg text-xs font-semibold text-white hover:bg-indigo-700 transition-all flex items-center space-x-1 shadow-sm">
+                        <span>✅</span>
+                        <span data-i18n="btn_apply">Appliquer</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- EDITOR VIEW -->
+            <div id="editor-view" class="flex-1 flex flex-col h-full">
+
+            <!-- Fixed Editor Toolbar -->
+            <div id="editor-toolbar" class="relative bg-slate-900 w-full flex-shrink-0 text-white shadow-md px-4 py-2 flex items-center space-x-4 text-xs font-semibold z-[9999] overflow-visible">
+                <div class="flex items-center space-x-2 border-r border-slate-700 pr-4">
+                    <button onclick="applySelectionFormatting('removeFormat')" class="hover:text-indigo-300 font-sans px-1 text-sm" title="Annuler le style / Clear style" data-i18n-title="toolbar_clear_style">🚫</button>
+                    <button onclick="applySelectionFormatting('italic')" class="hover:text-indigo-300 font-serif italic px-1 text-sm" title="Italique" data-i18n-title="toolbar_italic">I</button>
+                    <button onclick="applySelectionFormatting('bold')" class="hover:text-indigo-300 font-serif font-bold px-1 text-sm" title="Gras" data-i18n-title="toolbar_bold">B</button>
+                    <button onclick="applySelectionFormatting('bold_italic')" class="hover:text-indigo-300 font-serif font-bold italic px-1 text-sm" title="Gras + Italique" data-i18n-title="toolbar_bold_italic">B+I</button>
+                    <button onclick="applySelectionFormatting('smallcaps')" class="hover:text-indigo-300 font-serif px-1 text-xs tracking-wide" style="font-variant: small-caps;" title="Petites capitales" data-i18n-title="toolbar_smallcaps">sc</button>
+                    <button onclick="applySelectionFormatting('dialogue')" class="hover:text-indigo-300 font-serif px-1 text-sm" title="Dialogue" data-i18n-title="toolbar_dialogue">💬</button>
+                    <button onclick="applySelectionFormatting('annotation')" class="hover:text-indigo-300 font-serif px-1 text-sm" title="Annoter" data-i18n-title="toolbar_annotate">✍️</button>
+                    <button onclick="insertPageBreak()" class="hover:text-indigo-300 font-sans px-1 text-sm" title="Saut de page" data-i18n-title="toolbar_page_break">📄</button>
+                    <button onclick="togglePageNumbers()" class="hover:text-indigo-300 font-sans px-1 text-sm" title="Numéros de page" data-i18n-title="toolbar_page_numbers">🔢</button>
+                </div>
+
+                <div class="relative border-r border-slate-700 pr-4" id="synonyms-dropdown-wrapper">
+                    <button onclick="toggleSynonymsDropdown(event)" class="hover:text-indigo-300 flex items-center space-x-1 transition-colors">
+                        <span>📖</span>
+                        <span data-i18n="synonyms_btn">Synonymes</span>
+                        <span>▾</span>
+                    </button>
+                    <div id="synonyms-dropdown-menu" class="absolute hidden left-0 top-full mt-1.5 w-48 bg-slate-800 text-slate-100 rounded shadow-lg py-2 border border-slate-700 z-[9999] max-h-48 overflow-y-auto px-2 space-y-1">
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-4">
+                    <button onclick="triggerContextAI('describe')" class="hover:text-indigo-300 flex items-center space-x-1 transition-colors">
+                        <span>🔍</span>
+                        <span data-i18n="ai_describe">Décrire</span>
+                    </button>
+                    <button onclick="triggerContextAI('expand')" class="hover:text-indigo-300 flex items-center space-x-1 transition-colors">
+                        <span>➕</span>
+                        <span data-i18n="ai_expand">Développer</span>
+                    </button>
+                    <button onclick="triggerContextAI('show_dont_tell')" class="hover:text-indigo-300 flex items-center space-x-1 transition-colors">
+                        <span>👁️</span>
+                        <span data-i18n="ai_show_dont_tell">Show, Don't Tell</span>
+                    </button>
+                    <button onclick="triggerContextAI('sensory')" class="hover:text-indigo-300 flex items-center space-x-1 transition-colors">
+                        <span>👃</span>
+                        <span data-i18n="ai_sensory">Détails Sensoriels</span>
+                    </button>
+                    <div class="relative" id="ai-rewrite-dropdown-wrapper">
+                        <button onclick="toggleRewriteDropdown(event)" class="hover:text-indigo-300 flex items-center space-x-1 transition-colors">
+                            <span>✍️</span>
+                            <span data-i18n="ai_rewrite">Réécrire</span>
+                            <span>▾</span>
+                        </button>
+                        <div id="ai-rewrite-dropdown-menu" class="absolute hidden left-0 top-full mt-1.5 w-40 bg-slate-800 text-slate-100 rounded shadow-lg py-1 border border-slate-700 z-[9999]">
+                            <button onclick="triggerContextAI('rewrite', 'slang'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="rewrite_slang">Argotique</button>
+                            <button onclick="triggerContextAI('rewrite', 'elegant'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="rewrite_elegant">Soutenu / Élégant</button>
+                            <button onclick="triggerContextAI('rewrite', 'medieval'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="rewrite_medieval">Médiéval / Fantasy</button>
+                            <button onclick="triggerContextAI('rewrite', 'poetic'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="rewrite_poetic">Poétique</button>
+                            <button onclick="triggerContextAI('rewrite', 'brutal'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="rewrite_brutal">Brutal / Sec</button>
+                            <button onclick="triggerContextAI('rewrite', 'cynical'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="rewrite_cynical">Cynique</button>
+                        </div>
+                    </div>
+                    <div class="relative" id="ai-pov-dropdown-wrapper">
+                        <button onclick="togglePovDropdown(event)" class="hover:text-indigo-300 flex items-center space-x-1 transition-colors">
+                            <span>🎥</span>
+                            <span data-i18n="ai_pov">Point de Vue</span>
+                            <span>▾</span>
+                        </button>
+                        <div id="ai-pov-dropdown-menu" class="absolute hidden left-0 top-full mt-1.5 w-48 bg-slate-800 text-slate-100 rounded shadow-lg py-1 border border-slate-700 z-[9999]">
+                            <button onclick="triggerContextAI('pov', 'first_person'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="pov_first">1ère pers. (Je)</button>
+                            <button onclick="triggerContextAI('pov', 'third_limited'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="pov_third">3ème pers. (Il/Elle, Limité)</button>
+                            <button onclick="triggerContextAI('pov', 'other_witness'); event.stopPropagation();" class="w-full text-left px-3 py-1 hover:bg-slate-700 transition-colors" data-i18n="pov_omniscient">Omniscient</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+                <!-- Centered distraction-free layout -->
+                <div class="flex-1 overflow-y-auto px-12 py-10 flex flex-col items-center h-full" id="editor-scroll-container">
+                    <div class="w-full max-w-2xl flex-1 flex flex-col h-full" id="editor-layout-wrapper">
+                        <!-- Stake of Chapter Header and Scene Blocks will be dynamically rendered here -->
+                    </div>
+                </div>
+
+                <!-- Word counter footer bar -->
+                <footer class="h-10 bg-slate-50 border-t border-slate-100 flex items-center justify-end px-6 text-xs text-slate-400 space-x-4 shrink-0">
+                    <span id="editor-words-count">0 mots</span>
+                    <span class="text-slate-200">|</span>
+                    <span id="editor-chars-count">0 caract.</span>
+                </footer>
+            </div>
+
+            <!-- PLOT GRID VIEW -->
+            <div id="plot-grid-view" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden bg-slate-50 h-full">
+                <!-- Tab Header -->
+                <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xl">📊</span>
+                        <h2 class="text-base font-bold text-slate-800" data-i18n="visual_timeline">Trame Chronologique</h2>
+                    </div>
+                    <div class="flex bg-slate-100 p-1 rounded-lg">
+                        <button onclick="setPlotSubView('grid')" id="plot-view-grid-tab" class="px-4 py-1.5 rounded-md text-xs font-bold transition-all bg-white text-slate-800 shadow-xs">
+                            <span data-i18n="grid_view">Vue Grille</span>
+                        </button>
+                        <button onclick="setPlotSubView('timeline')" id="plot-view-timeline-tab" class="px-4 py-1.5 rounded-md text-xs font-bold transition-all text-slate-600 hover:text-slate-900">
+                            <span data-i18n="timeline_view">Trame Visuelle</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Sub-view 1: Grid Table -->
+                <div id="plot-grid-table-container" class="flex-1 overflow-auto p-6 h-full relative min-h-0 min-w-0">
+                    <svg id="plot-grid-svg-canvas" class="absolute inset-0 pointer-events-none z-30" style="width: 100%; height: 100%; min-width: 100%; min-height: 100%;"></svg>
+                    <!-- Dynamic Grid -->
+                    <table id="plot-grid-container" class="border-collapse bg-white rounded-xl shadow-sm overflow-hidden min-w-full relative z-20">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-600 text-xs font-bold uppercase tracking-wider" id="plot-grid-headers">
+                                <!-- Column headers dynamically inserted -->
+                            </tr>
+                        </thead>
+                        <tbody id="plot-grid-body" class="divide-y divide-slate-100">
+                            <!-- Swimlanes and Cells dynamically inserted -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Sub-view 2: Visual Chronology Timeline -->
+                <div id="plot-grid-timeline-container" class="hidden flex-1 overflow-auto p-8 h-full relative bg-slate-50 min-h-0 min-w-0">
+                    <svg id="plot-timeline-svg-canvas" class="absolute inset-0 pointer-events-none z-[9999]" style="width: 100%; height: 100%; min-width: 100%; min-height: 100%;"></svg>
+                    <div id="plot-timeline-flow" class="flex space-x-12 items-start relative z-20 min-w-max pb-12">
+                        <!-- Horizontal scenes nodes and connected plot cards dynamically inserted -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- RESOURCE VIEW (CHARACTERS & STORY NOTES) -->
+            <div id="resource-view" class="hidden flex-1 flex flex-col overflow-hidden bg-slate-50 p-10 items-center justify-start overflow-y-auto h-full">
+                <div class="w-full max-w-2xl bg-white p-8 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex items-center space-x-3 mb-6">
+                        <span id="resource-icon" class="text-3xl">👤</span>
+                        <input type="text" id="resource-title" oninput="onResourceInput('title', this.value)" class="text-2xl font-bold border-none outline-none focus:ring-0 text-slate-800 placeholder-slate-300 w-full" placeholder="Nom...">
+                    </div>
+
+                    <!-- Dynamic field forms for Characters -->
+                    <div id="character-fields" class="space-y-6">
+                        <!-- Filled dynamically by renderCharacterFields() -->
+                    </div>
+
+                    <!-- Dynamic field forms for Story Notes -->
+                    <div id="note-fields" class="hidden space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="note_type">Type de note / Lieu</label>
+                            <input type="text" id="note-type" oninput="onResourceInput('type', this.value)" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 shadow-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="note_content">Contenu de la note</label>
+                            <textarea id="note-content" oninput="onResourceInput('content', this.value)" rows="8" class="w-full rounded-lg border-slate-300 text-sm focus:border-indigo-500 focus:ring-indigo-500 shadow-sm resize-none"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STATISTICS DASHBOARD VIEW -->
+            <div id="stats-view" class="hidden flex-1 flex flex-col overflow-y-auto bg-slate-50 h-full p-8 space-y-8">
+                <!-- Top Header Info -->
+                <div class="flex items-center space-x-3 mb-2">
+                    <span class="text-2xl">📚</span>
+                    <h2 class="text-2xl font-bold text-slate-800" id="stats-title-display">Mon Roman</h2>
+                </div>
+
+                <!-- First Row: High Level Stats -->
+                <div class="grid grid-cols-3 gap-8">
+                    <!-- Total Words -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200/60 shadow-sm">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2" data-i18n="total_words">Nombre Total de Mots</h3>
+                        <div class="text-5xl font-bold text-slate-800 mb-2" id="stats-total-words">0</div>
+                        <div class="text-xs text-slate-500" id="stats-reading-time">≈ 0 min de lecture</div>
+                    </div>
+
+                    <!-- Goal Progress -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200/60 shadow-sm">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400" data-i18n="overall_goal">Objectif Global</h3>
+                            <span class="text-sm font-semibold text-slate-600" id="stats-goal-text">0 / 0</span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-3 mt-4 mb-2">
+                            <div id="stats-goal-bar" class="bg-indigo-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Writing Streak (Placeholder/Basic implementation) -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200/60 shadow-sm">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2" data-i18n="writing_streak">Série</h3>
+                        <div class="text-5xl font-bold text-slate-800 mb-2" id="stats-streak">0 <span class="text-2xl text-slate-500 font-normal">jours</span></div>
+                        <div class="text-xs text-slate-500" id="stats-longest-streak">Plus longue : 0</div>
+                    </div>
+                </div>
+
+                <!-- Second Row: Structure -->
+                <div>
+                    <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center border-b border-slate-200 pb-2">
+                        <span class="text-slate-400 mr-2">§ I</span> Structure
+                        <span class="ml-auto text-xs font-normal text-slate-500 uppercase tracking-wider" id="stats-structure-summary">0 SCÈNES · 0 CHAPITRES</span>
+                    </h3>
+                    <div class="grid grid-cols-3 gap-8">
+                        <div class="bg-white p-6 rounded-xl border border-slate-200/60 shadow-sm">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2" data-i18n="scenes">Scènes</h4>
+                            <div class="text-4xl font-bold text-slate-800 mb-1" id="stats-scenes-count">0</div>
+                            <div class="text-xs text-slate-500" id="stats-chapters-count-sub">across 0 chapters</div>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl border border-slate-200/60 shadow-sm">
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2" data-i18n="avg_words_scene">Mots moy. / Scène</h4>
+                            <div class="text-4xl font-bold text-slate-800 mb-1" id="stats-avg-words-scene">0</div>
+                        </div>
+                        <div class="flex flex-col space-y-4">
+                            <div class="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm flex-1 flex flex-col justify-center">
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="notes">Notes</h4>
+                                <div class="text-3xl font-bold text-slate-800" id="stats-notes-count">0</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm flex-1 flex flex-col justify-center">
+                                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="events">Événements de chronologie</h4>
+                                <div class="text-3xl font-bold text-slate-800" id="stats-events-count">0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Third Row: Words per chapter -->
+                <div>
+                    <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center border-b border-slate-200 pb-2">
+                        <span class="text-slate-400 mr-2">§ -</span> Mots par chapitre
+                    </h3>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200/60 shadow-sm">
+                         <div id="stats-chapters-chart" class="flex items-end space-x-1 h-48 w-full border-b border-slate-300 pb-1">
+                             <!-- Chapter bars will be inserted here -->
+                         </div>
+                         <div id="stats-chapters-labels" class="flex items-start space-x-1 w-full mt-1">
+                             <!-- Chapter labels will be inserted here -->
+                         </div>
+                    </div>
+                </div>
+
+                <!-- Fourth Row: Characters -->
+                <div>
+                    <h3 class="text-sm font-bold text-slate-700 mb-4 flex items-center border-b border-slate-200 pb-2">
+                        <span class="text-slate-400 mr-2">§ II</span> Habitants
+                        <span class="ml-auto text-xs font-normal text-slate-500 uppercase tracking-wider" id="stats-inhabitants-summary">0 PEOPLE</span>
+                    </h3>
+                    <div class="bg-white p-6 rounded-xl border border-slate-200/60 shadow-sm">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4" data-i18n="characters_by_appearances">Personnages par apparitions</h4>
+                        <div id="stats-characters-list" class="space-y-3">
+                            <!-- Character bars will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STATISTICS DASHBOARD VIEW -->
+        </main>
+
+        <!-- RIGHT SIDEBAR: GOALS & FOCUS TIMER -->
+        <aside id="right-sidebar" class="w-[448px] bg-slate-100 border-l border-slate-200 flex flex-col h-full shrink-0 p-4 space-y-6 relative">
+            <!-- RESIZE HANDLE -->
+            <div id="sidebar-resize-handle" class="absolute top-0 left-0 w-1.5 h-full cursor-col-resize hover:bg-indigo-300 transition-colors z-20 border-l border-slate-200"></div>
+
+            <!-- GOALS & METRICS -->
+            <div class="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm shrink-0">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3" data-i18n="goals_and_stats">Objectifs & Stats</h3>
+
+                <div class="space-y-4">
+                    <!-- Daily Goal Setting -->
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="daily_word_goal">Objectif quotidien</label>
+                        <input type="number" id="daily-goal-input" onchange="onDailyGoalChange(this.value)" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+
+                    <!-- Daily Progress Bar -->
+                    <div>
+                        <div class="flex justify-between text-[10px] font-semibold text-slate-500 mb-1" id="daily-progress-text">
+                            Quotidien : 0 / 500 mots
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2">
+                            <div id="daily-progress-bar" class="bg-emerald-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Overall Progress Bar -->
+                    <div>
+                        <div class="flex justify-between text-[10px] font-semibold text-slate-500 mb-1" id="overall-progress-text">
+                            Global : 0 / 50000 mots
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2">
+                            <div id="overall-progress-bar" class="bg-indigo-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <!-- Statistics Dashboard Button -->
+                    <button onclick="selectStatisticsDashboard()" class="w-full mt-4 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg text-sm font-semibold transition-all flex justify-center items-center space-x-2 border border-slate-300">
+                        <span>📈</span>
+                        <span>Stats</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- POMODORO FOCUS TIMER -->
+            <div class="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm flex flex-col items-center shrink-0">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 self-start" data-i18n="focus_timer">Minuteur Focus</h3>
+
+                <!-- Large Countdown Clock -->
+                <div class="text-3xl font-bold text-slate-700 tracking-wider mb-2 font-mono" id="timer-display">
+                    15:00
+                </div>
+
+                <!-- Timer duration slider -->
+                <input type="range" id="timer-slider" min="1" max="60" value="15" oninput="onTimerSlider(this.value)" class="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600 mb-4">
+
+                <!-- Controls -->
+                <div class="flex space-x-2 w-full">
+                    <button id="timer-start-btn" onclick="toggleTimer()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 px-2 rounded-lg shadow-sm transition-all" data-i18n="start">Démarrer</button>
+                    <button onclick="resetTimer()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-1.5 px-2 rounded-lg transition-all" data-i18n="reset">Réinit.</button>
+                </div>
+            </div>
+
+            <!-- AI ASSISTANT CHAT -->
+            <div id="ai-chat-section" class="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm flex flex-col flex-1 min-h-[250px] overflow-hidden">
+                <div class="flex items-center justify-between mb-2 shrink-0">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400" data-i18n="ai_assistant">Assistant IA</h3>
+                    <button onclick="clearChat()" class="text-[10px] text-indigo-500 hover:text-red-500 font-bold transition-all" data-i18n="clear_chat">Effacer</button>
+                </div>
+
+                <!-- Chat Messages History Box -->
+                <div id="chat-messages" class="flex-1 overflow-y-auto space-y-2 mb-3 pr-1 text-xs flex flex-col">
+                    <!-- Default greeting bubble -->
+                    <div class="bg-slate-50 text-slate-700 p-2.5 rounded-lg border border-slate-100 self-start mr-6 shadow-2xs">
+                        Bonjour ! Je suis votre assistant Écriture. Posez-moi des questions sur vos personnages, l'intrigue ou demandez-moi des idées pour votre scène en cours.
+                    </div>
+                </div>
+
+                <!-- Input area -->
+                <div class="flex items-center space-x-1 shrink-0">
+                    <input type="text" id="chat-input" onkeydown="if(event.key==='Enter') sendChatMessage()" data-i18n-placeholder="chat_placeholder" placeholder="Posez une question..." class="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none">
+                    <button onclick="sendChatMessage()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow-sm transition-all" data-i18n="send">
+                        Envoyer
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+    </div>
+
+    <!-- MODAL: PROJECT SETTINGS -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[420px] max-h-[85vh] overflow-y-auto rounded-xl shadow-xl p-6 border border-slate-200">
+            <h3 class="text-lg font-bold text-slate-800 mb-4" data-i18n="project_settings">Paramètres du projet</h3>
+
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="novel_title">Titre du roman</label>
+                    <input type="text" id="settings-title-input" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="overall_word_goal">Objectif global (mots)</label>
+                    <input type="number" id="settings-goal-input" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+
+                <!-- LAYOUT & TYPOGRAPHY SETTINGS -->
+                <div class="pt-3 border-t border-slate-100">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2" data-i18n="layout_settings_title">Mise en page de l'éditeur</h4>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1" data-i18n="layout_font">Police (Font)</label>
+                            <select id="settings-layout-font" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer">
+                                <option value="Georgia, serif">Georgia</option>
+                                <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                                <option value="'EB Garamond', serif">EB Garamond</option>
+                                <option value="'Literata', serif">Literata</option>
+                                <option value="Arial, sans-serif">Arial</option>
+                                <option value="Helvetica, sans-serif">Helvetica</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1" data-i18n="layout_size">Taille (Font size)</label>
+                            <select id="settings-layout-size" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer">
+                                <option value="11pt">11 pt</option>
+                                <option value="12pt">12 pt (Défaut)</option>
+                                <option value="14pt">14 pt</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1" data-i18n="layout_spacing">Interligne (Spacing)</label>
+                            <select id="settings-layout-spacing" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer">
+                                <option value="1.35">1.35 (Compact)</option>
+                                <option value="1.5">1.5 (Standard)</option>
+                                <option value="1.6">1.6 (Recommandé)</option>
+                                <option value="1.8">1.8 (Manuscrit)</option>
+                                <option value="2.0">2.0 (Double)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-600 mb-1" data-i18n="layout_align">Justification</label>
+                            <select id="settings-layout-align" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer">
+                                <option value="left" data-i18n="align_left">Alignement à gauche</option>
+                                <option value="justify" data-i18n="align_justify">Texte justifié</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI CONFIGURATION -->
+                <div class="pt-3 border-t border-slate-100">
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2" data-i18n="ai_settings_title">Configuration de l'IA</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1" data-i18n="ai_model">Modèle Gemma</label>
+                            <select id="settings-ai-model-input" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer">
+                                <!-- Populated dynamically -->
+                            </select>
+                        </div>
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs font-semibold text-slate-600" data-i18n="ai_temperature">Température (Créativité)</label>
+                                <span id="settings-ai-temp-display" class="text-xs font-bold text-indigo-600">0.7</span>
+                            </div>
+                            <input type="range" id="settings-ai-temp-input" min="0.0" max="1.0" step="0.1" value="0.7" oninput="document.getElementById('settings-ai-temp-display').innerText = parseFloat(this.value).toFixed(1)" class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                            <p class="text-[10px] text-slate-400 mt-1 leading-tight" data-i18n="ai_creativity_info">Une valeur basse (0.2) est plus factuelle, une valeur élevée (0.8+) est plus créative.</p>
+                        </div>
+                        <div class="flex items-start space-x-2 pt-1">
+                            <input type="checkbox" id="settings-ai-context-input" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer mt-0.5" checked>
+                            <div>
+                                <label for="settings-ai-context-input" class="text-xs font-semibold text-slate-600 cursor-pointer" data-i18n="ai_inject_context">Injecter le contexte du Lore</label>
+                                <p class="text-[10px] text-slate-400 leading-tight" data-i18n="ai_inject_context_info">Fournit automatiquement à l'IA les personnages et notes associés à la scène en cours.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BACKUP & AUTO-SAVE CONFIGURATION -->
+                <div class="pt-3 border-t border-slate-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500" data-i18n="backup_settings_title">Configuration des Sauvegardes</h4>
+                        <button onclick="openRestoreModal()" class="text-slate-400 hover:text-indigo-600 font-bold px-2 py-1 rounded transition-colors flex items-center space-x-1" title="Restaurer / Importer" data-i18n-title="restore_import_title">
+                            <span class="text-sm">🔄</span>
+                        </button>
+                    </div>
+                    <div class="space-y-3">
+                        <!-- Directory Selection -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1" data-i18n="backup_local_path_label">Répertoire de destination des sauvegardes :</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="settings-backup-path" placeholder="e.g. C:/sauvegardes_ecriture" class="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1 text-xs focus:ring-indigo-500 focus:border-indigo-500">
+                                <button type="button" onclick="triggerDirectoryPicker()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2.5 py-1 rounded-lg text-xs transition-all flex items-center space-x-1 shrink-0">
+                                    <span>📂</span> <span data-i18n="btn_choose">Parcourir...</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Frequency Selection -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1" data-i18n="backup_frequency_label">Fréquence des sauvegardes :</label>
+                            <select id="settings-backup-frequency" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer">
+                                <option value="daily" data-i18n="freq_daily">Une sauvegarde tous les jours (Quotidien)</option>
+                                <option value="weekly" data-i18n="freq_weekly">Une sauvegarde par semaine (Hebdomadaire)</option>
+                                <option value="monthly" data-i18n="freq_monthly">Une sauvegarde par mois (Mensuel)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col space-y-2 pt-2 border-t border-slate-100">
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="settings-disable-ads-input" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                        <label for="settings-disable-ads-input" class="text-xs font-bold uppercase tracking-wider text-slate-600 cursor-pointer" data-i18n="disable_ads">Disable Ads/Donation</label>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="settings-lock-input" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                        <label for="settings-lock-input" class="text-xs font-bold uppercase tracking-wider text-slate-600 cursor-pointer" data-i18n="lock_novel">Verrouiller le roman</label>
+                    </div>
+                </div>
+                <div class="pt-2 border-t border-slate-100">
+                    <button onclick="deleteCurrentProject()" class="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-2 rounded-lg text-xs font-bold transition-all" data-i18n="delete_novel">
+                        Supprimer le roman
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-2">
+                <button onclick="closeSettingsModal()" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors" data-i18n="cancel">Annuler</button>
+                <button onclick="saveProjectSettings()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all" data-i18n="save">Enregistrer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: NEW NOVEL CREATE -->
+    <div id="new-project-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-96 rounded-xl shadow-xl p-6 border border-slate-200">
+            <h3 class="text-lg font-bold text-slate-800 mb-4" data-i18n="add_novel">Nouveau roman</h3>
+
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="novel_title">Titre du roman</label>
+                    <input type="text" id="new-project-title-input" data-i18n-placeholder="new_novel_title_placeholder" placeholder="Entrez le titre du roman..." class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-2">
+                <button onclick="closeNewProjectModal()" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors" data-i18n="cancel">Annuler</button>
+                <button onclick="createNewProject()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all" data-i18n="create_novel">Créer le roman</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD CHAPTER TYPE SELECTOR -->
+    <div id="chapter-type-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[640px] max-w-2xl rounded-xl shadow-xl p-6 border border-slate-200 flex flex-col max-h-[85vh]">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h3 class="text-lg font-bold text-slate-800" data-i18n="add_chapter_title">Ajouter un nouveau chapitre</h3>
+                <button onclick="closeChapterTypeModal()" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <!-- Category Tabs -->
+            <div class="flex space-x-1 bg-slate-100 p-1 rounded-lg mb-4 text-xs shrink-0">
+                <button id="tab-category-liminaires" onclick="selectChapterCategory('liminaires')" class="flex-1 py-1.5 rounded-md font-semibold transition-all bg-white text-slate-800 shadow-xs" data-i18n="cat_liminaires">1. Pages liminaires</button>
+                <button id="tab-category-corps" onclick="selectChapterCategory('corps')" class="flex-1 py-1.5 rounded-md font-semibold transition-all text-slate-500 hover:text-slate-800" data-i18n="cat_corps">2. Corps du roman</button>
+                <button id="tab-category-finales" onclick="selectChapterCategory('finales')" class="flex-1 py-1.5 rounded-md font-semibold transition-all text-slate-500 hover:text-slate-800" data-i18n="cat_finales">3. Pages finales</button>
+            </div>
+
+            <!-- Cards Scrollable Area -->
+            <div id="chapter-cards-grid" class="grid grid-cols-2 gap-3 overflow-y-auto pr-1 flex-1 py-1" style="max-height: 400px;">
+                <!-- Dynamically populated via JS -->
+            </div>
+
+            <div class="flex justify-end pt-4 border-t border-slate-100 mt-4 shrink-0">
+                <button onclick="closeChapterTypeModal()" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors" data-i18n="cancel">Annuler</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ABOUT -->
+    <div id="about-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-96 rounded-xl shadow-xl p-6 border border-slate-200 text-center">
+            <span class="text-5xl mb-3 block">✒️</span>
+            <h3 class="text-lg font-bold text-slate-800 mb-2" data-i18n="about">À propos</h3>
+            <div class="text-sm text-slate-500 mb-4" data-i18n="about_text">Écriture v1.0 - Un environnement d'écriture et de planification moderne et sans distraction.</div>
+
+            <div id="update-container" class="mb-6 p-4 rounded-lg text-sm bg-slate-50 border border-slate-100 hidden">
+                <!-- Update info will be injected here -->
+            </div>
+
+            <button onclick="closeAboutModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all w-full" data-i18n="cancel">Fermer</button>
+        </div>
+    </div>
+
+    <!-- MODAL: GEMMA MISSING -->
+    <div id="gemma-missing-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[500px] max-w-lg rounded-xl shadow-xl p-6 border border-slate-200">
+            <div class="text-center mb-4">
+                <span class="text-5xl mb-2 block">🧠</span>
+                <h3 class="text-xl font-bold text-slate-800" data-i18n="gemma_missing_title">Intégration de Gemma — IA d'écriture locale</h3>
+            </div>
+
+            <p class="text-sm text-slate-600 mb-4 leading-relaxed" data-i18n="gemma_missing_intro">
+                Le modèle d'IA local Gemma n'a pas été détecté sur votre système. L'IA locale est une fonctionnalité clé pour démultiplier vos capacités d'écriture avec Écriture :
+            </p>
+
+            <ul class="space-y-3 mb-6 text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100">
+                <li data-i18n="gemma_benefit_1">✨ <strong>Génération et Enrichissement :</strong> Décrivez, réécrivez dans différents styles ou étendez vos scènes instantanément depuis votre sélection.</li>
+                <li data-i18n="gemma_benefit_2">🔍 <strong>Atelier de Relecture & Correction :</strong> Bénéficiez d'analyses approfondies de style, de prose et de cohérence narrative, 100% en local et de manière totalement confidentielle.</li>
+                <li data-i18n="gemma_benefit_3">💬 <strong>Assistant IA contextuel :</strong> Chattez avec un assistant d'écriture intelligent qui comprend vos personnages et vos notes pour planifier votre roman.</li>
+            </ul>
+
+
+
+
+            <div id="gemma-install-progress-container" class="hidden mt-4 mb-4">
+                <div class="flex items-center justify-center mb-2">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span id="gemma-install-status-text" class="text-sm font-medium text-slate-700">Préparation...</span>
+                </div>
+                <div class="w-full bg-slate-200 rounded-full h-2.5 dark:bg-slate-700">
+                    <div id="gemma-install-progress-bar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+            <div class="flex justify-center mt-4">
+                <button onclick="closeGemmaMissingModal()" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-all" data-i18n="cancel">Fermer</button>
+            </div>
+            </div>
+
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MODAL: DONATION -->
+    <div id="donation-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[500px] max-w-lg rounded-xl shadow-xl p-6 border border-slate-200">
+            <div class="text-center mb-4">
+                <span class="text-5xl mb-2 block">☕</span>
+                <h3 class="text-xl font-bold text-slate-800" data-i18n="donation_title">Support Ecriture</h3>
+            </div>
+            <p class="text-sm text-slate-600 mb-6 text-center leading-relaxed" data-i18n="donation_text">
+                If you enjoy using this application and want to support its development, please consider making a donation.
+            </p>
+            <div class="flex flex-col items-center justify-center space-y-4">
+                <div class="flex space-x-4">
+                    <a href="https://ko-fi.com/neomars" target="_blank" class="inline-flex items-center justify-center bg-yellow-500 hover:bg-yellow-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-md transition-all gap-2" onclick="closeDonationModal()">
+                        <span data-i18n="donation_btn">Buy me a coffee</span>
+                    </a>
+                    <button onclick="closeDonationModal()" class="inline-flex items-center justify-center bg-slate-200 hover:bg-slate-300 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-all gap-2">
+                        <span data-i18n="btn_close">Close</span>
+                    </button>
+                </div>
+                <div class="flex items-center justify-center mt-4">
+                    <input type="checkbox" id="modal-disable-ads-input" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer mr-2" onchange="if(this.checked) disableAdsFromModal();">
+                    <label for="modal-disable-ads-input" class="text-xs font-bold uppercase tracking-wider text-slate-600 cursor-pointer" data-i18n="disable_ads">Disable Ads</label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: GEMMA INSTALLED -->
+    <div id="gemma-installed-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[400px] max-w-md rounded-xl shadow-xl p-6 border border-slate-200 text-center">
+            <span class="text-5xl mb-3 block">🎉</span>
+            <h3 class="text-lg font-bold text-slate-800 mb-2">Gemma</h3>
+            <div id="gemma-installed-message" class="text-sm text-slate-600 mb-6 leading-relaxed">
+                Gemma installé. Version llama3
+            </div>
+            <button onclick="closeGemmaInstalledModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-all w-full" data-i18n="btn_close">Fermer</button>
+        </div>
+    </div>
+
+    <!-- MODAL: RELECTURE WORKSHOP -->
+    <div id="relecture-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[800px] max-w-4xl rounded-xl shadow-xl p-6 border border-slate-200 flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 shrink-0">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center space-x-2">
+                    <span>🔍</span> <span data-i18n="relecture_modal_title">Atelier de Relecture & Correction</span>
+                </h3>
+                <button onclick="closeRelectureModal()" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <!-- Header Section: select scene & scope -->
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-slate-50 p-3 rounded-lg mb-4 shrink-0 border border-slate-100">
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider" data-i18n="relecture_scene_label">Scène :</span>
+                    <span id="relecture-active-scene-title" class="text-sm font-semibold text-slate-800">-</span>
+                </div>
+                <!-- Scope Selector -->
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Portée d'analyse / Scope :</span>
+                    <select id="relecture-scope-select" onchange="changeRelectureScope(this.value)" class="bg-white border border-slate-300 text-slate-700 text-xs rounded-lg p-1.5 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="scene">Scène actuelle / Current Scene</option>
+                        <option value="chapter">Chapitre entier / Entire Chapter</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="grid grid-cols-4 gap-4 mb-4 shrink-0">
+                <div class="bg-slate-50 border border-slate-200/60 p-3 rounded-lg text-center">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider" data-i18n="stat_words">MOTS</div>
+                    <div id="relecture-stat-words" class="text-lg font-bold text-slate-700 mt-1">0</div>
+                </div>
+                <div class="bg-slate-50 border border-slate-200/60 p-3 rounded-lg text-center">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider" data-i18n="stat_richness">RICHESSE LEXICALE</div>
+                    <div id="relecture-stat-richness" class="text-lg font-bold text-slate-700 mt-1">0%</div>
+                </div>
+                <div class="bg-slate-50 border border-slate-200/60 p-3 rounded-lg text-center">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider" data-i18n="stat_paragraphs">PARAGRAPHES</div>
+                    <div id="relecture-stat-paragraphs" class="text-lg font-bold text-slate-700 mt-1">0</div>
+                </div>
+                <div class="bg-slate-50 border border-slate-200/60 p-3 rounded-lg text-center">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider" data-i18n="stat_dialogue_ratio">RATIO DIALOGUE</div>
+                    <div id="relecture-stat-dialogue" class="text-lg font-bold text-slate-700 mt-1">0%</div>
+                </div>
+            </div>
+
+            <!-- Main Split Workspace -->
+            <div class="flex flex-1 overflow-hidden min-h-0 gap-4 mb-4">
+                <!-- Left: Categories and actions -->
+                <div class="w-56 flex flex-col shrink-0 border-r border-slate-100 pr-4 space-y-2">
+                    <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2" data-i18n="relecture_categories_title">CATÉGORIES D'ANALYSE</h4>
+
+                    <button id="relecture-btn-repetitions" onclick="selectRelectureCategory('repetitions')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-all flex items-center space-x-2">
+                        <span>🔄</span> <span data-i18n="cat_repetitions">Répétitions & Mots faibles</span>
+                    </button>
+                    <button id="relecture-btn-rythme" onclick="selectRelectureCategory('rythme')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all flex items-center space-x-2">
+                        <span>⏳</span> <span data-i18n="cat_rythme">Rythme & Structure</span>
+                    </button>
+                    <button id="relecture-btn-style" onclick="selectRelectureCategory('style')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all flex items-center space-x-2">
+                        <span>💅</span> <span data-i18n="cat_style">Style & Prose (IA)</span>
+                    </button>
+                    <button id="relecture-btn-coherence" onclick="selectRelectureCategory('coherence')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all flex items-center space-x-2">
+                        <span>🧩</span> <span data-i18n="cat_coherence">Cohérence (IA)</span>
+                    </button>
+                    <button id="relecture-btn-worldbuilding" onclick="selectRelectureCategory('worldbuilding')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all flex items-center space-x-2">
+                        <span>🌍</span> <span data-i18n="cat_worldbuilding">Worldbuilding & Lore (IA)</span>
+                    </button>
+                </div>
+
+                <!-- Right: Analysis Display / Text Interaction -->
+                <div class="flex-1 flex flex-col min-h-0 bg-slate-50 rounded-xl border border-slate-200/60 p-4 overflow-y-auto">
+                    <!-- repetitions pane -->
+                    <div id="relecture-pane-repetitions" class="space-y-4">
+                        <p class="text-xs text-slate-500 italic mb-2">Cliquez sur un mot répété pour voir ses synonymes et le remplacer directement.</p>
+                        <div id="relecture-repetitions-list" class="flex flex-wrap gap-2 mb-4">
+                            <!-- Filled dynamically with repetitions -->
+                        </div>
+                        <div id="relecture-repetition-synonyms-container" class="hidden bg-white p-3 rounded-lg border border-indigo-100 shadow-sm space-y-2">
+                            <div class="text-xs font-bold text-indigo-700 flex items-center space-x-2">
+                                <span>📖</span> <span>Synonymes de : <span id="relecture-selected-rep-word" class="underline">word</span></span>
+                            </div>
+                            <div id="relecture-rep-synonyms-list" class="flex flex-wrap gap-1.5 pt-1">
+                                <!-- Filled dynamically -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- rythme pane -->
+                    <div id="relecture-pane-rythme" class="hidden space-y-3 text-xs text-slate-700 font-sans">
+                        <h4 class="font-bold text-slate-800">Analyse de rythme des phrases</h4>
+                        <div class="space-y-2 leading-relaxed">
+                            <p><strong>Phrases courtes (&lt; 10 mots) :</strong> Favorisent la tension dramatique, l'action rapide ou la confusion émotionnelle.</p>
+                            <p><strong>Phrases moyennes (10-25 mots) :</strong> Forment la base narrative standard, propice à la description fluide.</p>
+                            <p><strong>Phrases longues (&gt; 25 mots) :</strong> Adaptées aux flux de pensée complexes, aux descriptions contemplatives et à la poésie rythmique.</p>
+                        </div>
+                        <div class="border-t border-slate-200 pt-3 mt-3">
+                            <div class="font-bold mb-2">Statistiques de vos phrases dans cette scène :</div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="bg-white p-2 rounded border text-center">
+                                    <div class="text-[10px] text-slate-400 font-bold uppercase">Courtes</div>
+                                    <div id="relecture-pacing-short" class="text-sm font-bold text-slate-700 mt-1">0</div>
+                                </div>
+                                <div class="bg-white p-2 rounded border text-center">
+                                    <div class="text-[10px] text-slate-400 font-bold uppercase">Moyennes</div>
+                                    <div id="relecture-pacing-medium" class="text-sm font-bold text-slate-700 mt-1">0</div>
+                                </div>
+                                <div class="bg-white p-2 rounded border text-center">
+                                    <div class="text-[10px] text-slate-400 font-bold uppercase">Longues</div>
+                                    <div id="relecture-pacing-long" class="text-sm font-bold text-slate-700 mt-1">0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- style/coherence/AI feedback pane -->
+                    <div id="relecture-pane-ai" class="hidden flex flex-col flex-1 min-h-0">
+                        <div class="flex items-center justify-between mb-3 shrink-0">
+                            <span id="relecture-ai-title" class="text-xs font-bold text-indigo-700 uppercase tracking-wider">Style & Prose</span>
+                            <button onclick="runAiRelecture()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded-lg text-xs shadow-sm transition-all flex items-center space-x-1">
+                                <span>🤖</span> <span>Lancer l'analyse / Analyze</span>
+                            </button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto bg-white p-3.5 rounded-lg border border-slate-200/80 text-xs text-slate-700 leading-relaxed font-sans whitespace-pre-wrap min-h-[200px]" id="relecture-ai-feedback">
+                            Pour lancer l'analyse intelligente de style ou de cohérence, cliquez sur le bouton ci-dessus.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer buttons -->
+            <div class="flex justify-end pt-4 border-t border-slate-100 shrink-0">
+                <button onclick="closeRelectureModal()" class="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold transition-all" data-i18n="cancel">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: PLOT CARD EDIT -->
+    <div id="plot-card-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[500px] max-w-full rounded-xl shadow-xl p-6 border border-slate-200 flex flex-col max-h-[90vh]">
+            <h3 class="text-lg font-bold text-slate-800 mb-4" data-i18n="edit_plot_card">Modifier la carte d'intrigue</h3>
+
+            <div class="space-y-4 mb-6 overflow-y-auto pr-1 flex-1">
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="card_title">Titre de la carte</label>
+                    <input type="text" id="plot-card-title-input" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="card_content">Contenu de la carte</label>
+                    <textarea id="plot-card-desc-input" rows="3" class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-indigo-500 focus:border-indigo-500 resize-none"></textarea>
+                </div>
+
+                <!-- NEW SECTION: Associated Characters -->
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="associated_characters">Personnages associés</label>
+                    <div id="plot-card-characters-container" class="flex flex-wrap gap-1.5 py-1 text-xs">
+                        <!-- Dynamic Character Badges -->
+                    </div>
+                </div>
+
+                <!-- NEW SECTION: Connected Plot Cards -->
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="connected_cards">Cartes d'intrigue reliées</label>
+                    <div class="flex space-x-2 mb-2">
+                        <select id="plot-card-connections-select" class="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-indigo-500 focus:border-indigo-500">
+                            <!-- Dynamic Options -->
+                        </select>
+                        <button id="plot-card-add-connection-btn" onclick="addCardLinkFromModal()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-all" data-i18n="link_btn">Relier</button>
+                    </div>
+                    <div id="plot-card-connections-container" class="flex flex-wrap gap-1.5 text-xs">
+                        <!-- Dynamic Link Badges -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-between pt-4 border-t border-slate-100">
+                <button onclick="deletePlotCard()" class="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-semibold transition-all" data-i18n="delete">Supprimer</button>
+                <div class="flex space-x-2">
+                    <button onclick="closePlotCardModal()" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors" data-i18n="cancel">Annuler</button>
+                    <button onclick="savePlotCard()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-all" data-i18n="save">Enregistrer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FLOATING ANNOTATION TOOLTIP -->
+    <div id="annotation-tooltip" class="hidden absolute bg-white text-slate-800 rounded-xl shadow-2xl p-4 border border-slate-200 z-[9999] w-72 flex flex-col space-y-3 transition-all duration-200">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-1.5 shrink-0">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1" id="annotation-tooltip-title">
+                <span>✍️</span> <span data-i18n="annotation_title">Annotation</span>
+            </span>
+            <div class="flex items-center space-x-2 shrink-0">
+                <button onclick="toggleAnnotationSize(event)" class="text-slate-400 hover:text-indigo-600 font-bold px-1 text-sm transition-colors" title="Agrandir / Enlarge">↕️</button>
+                <button onclick="closeAnnotationTooltip()" class="text-slate-400 hover:text-red-500 font-bold">✕</button>
+            </div>
+        </div>
+        <textarea id="annotation-textarea" rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs focus:ring-indigo-500 focus:border-indigo-500 resize-y min-h-[60px]" placeholder="Saisissez votre note ici..."></textarea>
+        <div class="flex items-center justify-between gap-2 shrink-0">
+            <button onclick="deleteAnnotation()" class="text-red-500 hover:text-red-700 text-xs font-semibold flex items-center space-x-1">
+                <span>🗑️</span> <span data-i18n="delete">Supprimer</span>
+            </button>
+            <button onclick="saveAnnotation()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all">
+                <span data-i18n="save">Enregistrer</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- CORE SPA JAVASCRIPT -->
+
+    <!-- Tauri core JS is provided by Vite in dev, or injected in build -->
+    <script type="module">
+        import { invoke } from '@tauri-apps/api/core';
+        window.__TAURI__ = { core: { invoke } };
+    </script>
+    <script type="module" src="/static/js/api.js"></script>
+
+    <script type="module" src="/static/js/moteur.js"></script>
+    <script type="module" src="/static/js/linguistique.js"></script>
+    <script type="module" src="/static/js/ia.js"></script>
+
+    <!-- MODAL: RESTORE & IMPORT -->
+    <div id="restore-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
+        <div class="bg-white w-[500px] max-h-[85vh] overflow-y-auto rounded-xl shadow-xl p-6 border border-slate-200">
+            <h3 class="text-lg font-bold text-slate-800 mb-2" data-i18n="restore_modal_title">Restauration & Importation</h3>
+
+            <div class="bg-amber-50 border border-amber-200 text-amber-800 text-xs p-3 rounded-lg mb-4 flex items-start space-x-2">
+                <span class="text-base leading-none">⚠️</span>
+                <span data-i18n="restore_warning">Attention : L'importation ou la restauration écrasera <b>intégralement</b> le manuscrit actuel de ce projet. Cette action est irréversible.</span>
+            </div>
+
+            <!-- BACKUPS LIST -->
+            <div class="mb-5">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2" data-i18n="restore_backups_title">Restaurer une sauvegarde locale</h4>
+                <div id="restore-backups-list" class="space-y-2 max-h-48 overflow-y-auto bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm">
+                    <div class="text-slate-400 text-xs italic p-2 text-center" data-i18n="loading">Chargement...</div>
+                </div>
+            </div>
+
+            <!-- IMPORT DOCUMENT -->
+            <div class="mb-5 pt-4 border-t border-slate-100">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2" data-i18n="import_doc_title">Importer un document externe</h4>
+                <div class="flex items-center space-x-2">
+                    <input type="file" id="import-document-input" accept=".txt,.rtf,.odt,.doc,.docx,.epub" class="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-slate-200 rounded-lg bg-slate-50">
+                    <button onclick="importDocument()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-sm transition-all whitespace-nowrap" data-i18n="import_btn">
+                        Importer
+                    </button>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-1">Formats supportés : .txt, .docx, .odt, .epub</div>
+            </div>
+
+            <div class="flex justify-end border-t border-slate-100 pt-4">
+                <button onclick="closeRestoreModal()" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors" data-i18n="cancel">Annuler</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MODAL: GEMMA INSTALLING MODEL -->
+    <div id="gemma-installing-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
+        <div class="bg-white w-[400px] rounded-xl shadow-xl p-6 border border-slate-200 text-center">
+            <h3 class="text-lg font-bold text-slate-800 mb-2">Installation du modèle IA</h3>
+            <p class="text-sm text-slate-600 mb-4">Téléchargement de <span class="font-semibold text-indigo-600">gemma4:latest</span>. Veuillez patienter...</p>
+
+            <div class="w-full bg-slate-200 rounded-full h-2.5 mb-2">
+                <div id="gemma-auto-install-progress-bar" class="bg-indigo-600 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+            <div id="gemma-auto-install-status-text" class="text-xs text-slate-500 font-semibold mb-4">Initialisation...</div>
+            <div class="flex justify-center mt-4">
+                <button onclick="closeGemmaInstallingModal()" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2.5 rounded-lg text-sm font-semibold shadow-sm transition-all" data-i18n="cancel">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CHARACTER INTERVIEW -->
+    <div id="interview-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[500px] h-[600px] rounded-xl shadow-xl border border-slate-200 flex flex-col">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-4 border-b border-slate-100 bg-indigo-50/50 rounded-t-xl shrink-0">
+                <div class="flex items-center space-x-2">
+                    <span class="text-xl">💬</span>
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-800" id="interview-character-name">Nom du personnage</h3>
+                        <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Interview (IA)</p>
+                    </div>
+                </div>
+                <button onclick="closeInterviewModal()" class="text-slate-400 hover:text-slate-600 focus:outline-none">✕</button>
+            </div>
+
+            <!-- Chat Area -->
+            <div id="interview-chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 flex flex-col">
+                <!-- Messages will be injected here -->
+            </div>
+
+            <!-- Input Area -->
+            <div class="p-3 border-t border-slate-200 bg-white rounded-b-xl shrink-0">
+                <div class="flex items-center space-x-2">
+                    <input type="text" id="interview-chat-input" onkeydown="if(event.key==='Enter') sendInterviewMessage()" placeholder="Posez une question..." class="flex-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-indigo-500 focus:outline-none shadow-inner">
+                    <button onclick="sendInterviewMessage()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-sm transition-all">
+                        Envoyer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MODAL: BRAINSTORM & CREATIVE UNBLOCKING -->
+    <div id="brainstorm-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white w-[600px] max-w-2xl rounded-xl shadow-xl p-6 border border-slate-200 flex flex-col max-h-[85vh]">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                <h3 class="text-lg font-bold text-slate-800 flex items-center space-x-2">
+                    <span>💡</span> <span data-i18n="brainstorm_title">Déblocage Créatif & Brainstorming</span>
+                </h3>
+                <button onclick="closeBrainstormModal()" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <!-- Category Tabs -->
+            <div class="flex space-x-1 bg-slate-100 p-1 rounded-lg mb-4 text-xs shrink-0">
+                <button id="tab-brainstorm-complications" onclick="selectBrainstormTab('complications')" class="flex-1 py-1.5 rounded-md font-semibold transition-all bg-white text-slate-800 shadow-xs" data-i18n="brainstorm_tab_complications">Complications</button>
+                <button id="tab-brainstorm-names" onclick="selectBrainstormTab('names')" class="flex-1 py-1.5 rounded-md font-semibold transition-all text-slate-500 hover:text-slate-800" data-i18n="brainstorm_tab_names">Générateur de Noms</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto">
+                <!-- Complications Pane -->
+                <div id="brainstorm-pane-complications" class="space-y-4">
+                    <p class="text-sm text-slate-600" data-i18n="brainstorm_complications_desc">La scène s'enlise ? L'IA va analyser votre scène actuelle et proposer 3 imprévus narratifs cohérents pour relancer l'action.</p>
+                    <button onclick="generateComplications()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-sm transition-all w-full flex items-center justify-center space-x-2">
+                        <span>⚡</span> <span data-i18n="brainstorm_complications_btn">Générer des Complications</span>
+                    </button>
+                    <div id="complications-result" class="hidden mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                    </div>
+                </div>
+
+                <!-- Names Pane -->
+                <div id="brainstorm-pane-names" class="hidden space-y-4">
+                    <p class="text-sm text-slate-600" data-i18n="brainstorm_names_desc">Créez des noms de personnages, d'auberges, de planètes ou de villes respectant des racines linguistiques précises.</p>
+                    <div>
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1" data-i18n="brainstorm_names_style_label">Style / Racines (ex: Elfique, Cyberpunk, Japonais...)</label>
+                        <input type="text" id="names-style-input" data-i18n-placeholder="brainstorm_names_style_placeholder" placeholder="Ex: Noms de tavernes naines, Prénoms elfiques, Villes futuristes..." class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    <button onclick="generateNames()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg text-sm shadow-sm transition-all w-full flex items-center justify-center space-x-2">
+                        <span>✨</span> <span data-i18n="brainstorm_names_btn">Générer 10 Noms</span>
+                    </button>
+                    <div id="names-result" class="hidden mt-4 p-4 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4 border-t border-slate-100 mt-4 shrink-0">
+                <button onclick="closeBrainstormModal()" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700 transition-colors" data-i18n="btn_close">Fermer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirm Modal -->
+    <div id="custom-confirm-modal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-[9999]">
+        <div class="bg-white rounded-xl shadow-xl w-[90%] max-w-md flex flex-col border border-slate-200" onclick="event.stopPropagation()">
+            <div class="px-5 py-4 border-b border-slate-100 flex items-center gap-3 bg-indigo-50/50 rounded-t-xl">
+                <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg">
+                    i
+                </div>
+                <h3 class="text-base font-medium text-slate-800" id="custom-confirm-message">Message</h3>
+            </div>
+            <div class="px-5 py-4 flex justify-end gap-3 bg-slate-50 rounded-b-xl border-t border-slate-100">
+                <button id="custom-confirm-cancel" class="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm flex items-center gap-2">
+                    <span class="text-red-500 font-bold">×</span> Cancel
+                </button>
+                <button id="custom-confirm-ok" class="px-4 py-2 text-sm font-medium text-white bg-slate-800 rounded-lg hover:bg-slate-700 transition-colors shadow-sm flex items-center gap-2">
+                    <span class="text-green-400 font-bold">✓</span> OK
+                </button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
