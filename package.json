@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "tauri": "npm --prefix ecriture-rust run tauri --"
+  },
   "dependencies": {
     "jsdom": "^29.1.1",
     "playwright": "^1.63.0"
