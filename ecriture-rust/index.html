@@ -1138,10 +1138,7 @@
     <!-- CORE SPA JAVASCRIPT -->
 
     <!-- Tauri core JS is provided by Vite in dev, or injected in build -->
-    <script type="module">
-        import { invoke } from '@tauri-apps/api/core';
-        window.__TAURI__ = { core: { invoke } };
-    </script>
+    <script type="module" src="/src/tauri_init.ts"></script>
     <script type="module" src="/static/js/api.js"></script>
 
     <script type="module" src="/static/js/moteur.js"></script>
