@@ -233,5 +233,6 @@
   "rewrite_poetic": "Poetic",
   "rewrite_brutal": "Brutal / Dry",
   "rewrite_cynical": "Cynical",
-  "pov_omniscient": "Omniscient"
+  "pov_omniscient": "Omniscient",
+  "gemma_not_bundled": "No local AI engine is bundled with this build yet. AI tools use offline fallback responses instead."
 }
