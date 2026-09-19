@@ -260,9 +260,8 @@ window.showConfirm = function(message) {
 
         async function checkGemmaStatus() {
             try {
-                const res = await fetch('/api/ai/status');
-                if (res.ok) {
-                    const data = await res.json();
+                const data = await window.api_invoke('ai_status');
+                {
                     if (!data.installed) {
                         const sysInfo = data.sys_info;
                         showGemmaMissingModal(sysInfo);
@@ -451,8 +450,7 @@ window.showConfirm = function(message) {
 
         async function loadProjectsList() {
             try {
-                const res = await fetch(`/api/projects?t=${Date.now()}`);
-                const projects = await res.json();
+                const projects = await window.api_invoke('get_project_list');
 
                 const select = document.getElementById('project-select');
                 select.innerHTML = "";
@@ -482,13 +480,14 @@ window.showConfirm = function(message) {
                     if (autoSaveTimer) clearTimeout(autoSaveTimer);
                 }
 
-                const res = await fetch('/api_deprecated/projects/active', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename })
-                });
+                let switchOk = true;
+                try {
+                    await window.api_invoke('load_project', { filename });
+                } catch (e) {
+                    switchOk = false;
+                }
 
-                if (res.ok) {
+                if (switchOk) {
                     activeNodeId = null;
                     activeNodeType = null;
                     await loadProjectsList();
@@ -525,13 +524,14 @@ window.showConfirm = function(message) {
                     if (autoSaveTimer) clearTimeout(autoSaveTimer);
                 }
 
-                const res = await fetch('/api_deprecated/projects/create', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title })
-                });
+                let createOk = true;
+                try {
+                    await window.api_invoke('create_project', { title });
+                } catch (e) {
+                    createOk = false;
+                }
 
-                if (res.ok) {
+                if (createOk) {
                     closeNewProjectModal();
                     activeNodeId = null;
                     activeNodeType = null;
@@ -646,8 +646,7 @@ window.showConfirm = function(message) {
         // LOAD ACTIVE PROJECT FROM BACKEND JSON
         async function loadProject() {
             try {
-                const res = await fetch(`/api/project?t=${Date.now()}`);
-                projectData = await res.json();
+                projectData = await window.api_invoke('get_active_project');
 
                 // Normalize all characters to ensure backward compatibility
                 if (projectData && projectData.characters) {
@@ -693,8 +692,7 @@ window.showConfirm = function(message) {
         // FETCH EXTERNAL LOCALIZATION
         async function loadLocale(lang) {
             try {
-                const res = await fetch(`/api/locale/${lang}`);
-                translations = await res.json();
+                translations = await window.api_invoke('get_locale', { lang });
                 window.activeLang = lang;
                 translateDOM();
             } catch (err) {
@@ -739,24 +737,12 @@ window.showConfirm = function(message) {
             return val;
         }
 
-        let saveAbortController = null;
 
         // SAVE STATE BACK TO JSON FILE
         async function persistProject() {
             if (!projectData || isSavingDisabled) return; // Prevent ghost saves if project is being unloaded
             try {
-                if (saveAbortController) {
-                    saveAbortController.abort();
-                }
-                saveAbortController = new AbortController();
-                const res = await fetch('/api_deprecated/project', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(projectData),
-                    signal: saveAbortController.signal
-                });
-                const result = await res.json();
-                projectData = result.data;
+                projectData = await window.api_invoke('update_project', { data: projectData });
                 updateRightSidebar();
                 // Silently trigger auto-backup check
                 runAutoBackup();
@@ -805,11 +791,7 @@ window.showConfirm = function(message) {
 
             if (shouldBackup) {
                 try {
-                    await fetch('/api/backups/local/create', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ folder_path: path, frequency: freq })
-                    });
+                    await window.api_invoke('backup_create', { folderPath: path, frequency: freq });
                     // Save timestamps state back to project
                     await window.api_invoke("update_project", {data: projectData});
                 } catch (e) {
@@ -2850,14 +2832,9 @@ function renderStatisticsDashboard() {
                 // Post save first to ensure we export latest
                 await persistProject();
 
-                const response = await fetch('/api/export', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ format: format })
-                });
-
-                if (response.ok) {
-                    const blob = await response.blob();
+                try {
+                    const bytes = await window.api_invoke('export_draft', { format });
+                    const blob = new Blob([new Uint8Array(bytes)]);
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
@@ -2868,9 +2845,9 @@ function renderStatisticsDashboard() {
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                } else {
-                    const errorJson = await response.json().catch(() => ({}));
-                    alert("Export failed: " + (errorJson.error || "Unknown error"));
+                    window.URL.revokeObjectURL(url);
+                } catch (exportErr) {
+                    alert("Export failed: " + exportErr);
                 }
             } catch (err) {
                 console.error("Export error:", err);
@@ -3080,28 +3057,17 @@ function renderStatisticsDashboard() {
 
             try {
                 isSavingDisabled = true;
-                if (saveAbortController) {
-                    saveAbortController.abort();
-                }
                 projectData = null; // Prevent auto-save from overriding the newly switched project
                 if (autoSaveTimer) clearTimeout(autoSaveTimer);
 
-                const res = await fetch('/api_deprecated/projects/delete', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename })
-                });
-
-                if (res.ok) {
-                    closeSettingsModal();
-                    activeNodeId = null;
-                    activeNodeType = null;
-                    await loadProjectsList();
-                    await loadProject();
-                } else {
-                    alert("Failed to delete project.");
-                }
+                await window.api_invoke('delete_project', { filename });
+                closeSettingsModal();
+                activeNodeId = null;
+                activeNodeType = null;
+                await loadProjectsList();
+                await loadProject();
             } catch (err) {
+                alert("Failed to delete project.");
                 console.error("Error deleting project:", err);
             } finally {
                 isSavingDisabled = false;
@@ -4159,23 +4125,22 @@ window.loadBackupsList = async function() {
             currentPath = projectData.settings.backup_config.folder_path || "";
         }
 
-        let fetchUrl = '/api/backups/local/list';
-        if (currentPath) {
-            fetchUrl += `?path=${encodeURIComponent(currentPath)}`;
+        if (!currentPath) {
+            listContainer.innerHTML = '<div class="text-slate-400 text-xs italic p-2 text-center">Aucune sauvegarde locale trouvée.</div>';
+            return;
         }
 
-        const response = await fetch(fetchUrl);
-        const data = await response.json();
+        const backups = await window.api_invoke('backup_list', { folderPath: currentPath });
 
-        if (data.error || !data.backups || data.backups.length === 0) {
+        if (!backups || backups.length === 0) {
             listContainer.innerHTML = '<div class="text-slate-400 text-xs italic p-2 text-center">Aucune sauvegarde locale trouvée.</div>';
             return;
         }
 
         listContainer.innerHTML = '';
-        data.backups.forEach(backup => {
-            const date = new Date(backup.timestamp * 1000).toLocaleString();
-            const size = (backup.size / 1024).toFixed(1) + ' KB';
+        backups.forEach(backup => {
+            const date = new Date(backup.modified_unix * 1000).toLocaleString();
+            const size = (backup.size_bytes / 1024).toFixed(1) + ' KB';
 
             const btn = document.createElement('div');
             btn.className = 'flex items-center justify-between p-2 hover:bg-slate-200/50 rounded cursor-pointer border-b border-slate-100 last:border-0';
@@ -4200,23 +4165,10 @@ window.restoreBackup = async function(filename, path = "") {
     if (!(await showConfirm("Êtes-vous sûr de vouloir restaurer cette sauvegarde ? Cela écrasera toutes vos données actuelles."))) return;
 
     try {
-        const payload = { filename: filename };
-        if (path) payload.path = path;
-
-        const response = await fetch('/api/backups/local/restore', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const data = await response.json();
-
-        if (data.success) {
-            window.location.reload();
-        } else {
-            alert("Erreur lors de la restauration : " + data.error);
-        }
+        await window.api_invoke('backup_restore', { folderPath: path, filename: filename });
+        window.location.reload();
     } catch (err) {
-        alert("Erreur de connexion.");
+        alert("Erreur lors de la restauration : " + err);
     }
 };
 

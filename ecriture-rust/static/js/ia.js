@@ -75,34 +75,20 @@
             document.getElementById('ai-preview-tool-title').innerText = titleText;
 
             try {
-                const injectLore = (projectData.settings.inject_lore_context !== undefined) ? projectData.settings.inject_lore_context : true;
-                const sceneId = (activeNodeType === "scene") ? activeNodeId : null;
-                const response = await fetch('/api/ai', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tool: tool,
-                        style: style,
-                        text: activeSelection.text,
-                        temperature: (projectData.settings.ai_temperature !== undefined) ? projectData.settings.ai_temperature : 0.7,
-                        model: projectData.settings.ai_model || "llama3",
-                        inject_lore_context: injectLore,
-                        scene_id: sceneId,
-                        lang: window.activeLang
-                    })
+                const data = await window.api_invoke('ai_tool', {
+                    tool: tool,
+                    style: style,
+                    text: activeSelection.text,
+                    lang: window.activeLang
                 });
 
-                const data = await response.json();
                 document.getElementById('ai-preview-loading').classList.add('hidden');
 
-                if (response.ok) {
+                {
                     const resultContainer = document.getElementById('ai-preview-result-container');
                     resultContainer.innerText = data.message;
                     resultContainer.classList.remove('hidden');
                     document.getElementById('ai-preview-actions').classList.remove('hidden');
-                } else {
-                    alert((translations["error_ai_context"] || "AI error: Failed to generate") + ": " + (data.error || ""));
-                    closeAiPreview();
                 }
             } catch (err) {
                 console.error("AI Context error:", err);
@@ -181,23 +167,14 @@
                     ).join('\n');
                 }
 
-                const response = await fetch('/api/relecture/ai', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                try {
+                    const data = await window.api_invoke('ai_relecture', {
                         category: activeRelectureCategory, // "style", "coherence" or "worldbuilding"
                         text: text,
-                        temperature: (projectData.settings.ai_temperature !== undefined) ? projectData.settings.ai_temperature : 0.7,
-                        model: projectData.settings.ai_model || "llama3",
-                        lang: window.activeLang,
-                        lore_context: loreContext
-                    })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
+                        lang: window.activeLang
+                    });
                     feedbackEl.innerText = data.feedback;
-                } else {
+                } catch (aiErr) {
                     feedbackEl.innerText = translations["error_ai_feedback"] || "Error: Could not retrieve feedback from AI.";
                 }
             } catch (err) {
@@ -537,28 +514,13 @@
             resultContainer.classList.remove('hidden');
 
             try {
-                const injectLore = (projectData && projectData.settings && projectData.settings.inject_lore_context !== undefined) ? projectData.settings.inject_lore_context : true;
-                const sceneId = (activeNodeType === "scene") ? activeNodeId : null;
-                const response = await fetch('/api/ai', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tool: 'complications',
-                        text: text,
-                        temperature: (projectData && projectData.settings && projectData.settings.ai_temperature !== undefined) ? projectData.settings.ai_temperature : 0.7,
-                        model: (projectData && projectData.settings) ? projectData.settings.ai_model : "llama3",
-                        inject_lore_context: injectLore,
-                        scene_id: sceneId,
-                        lang: window.activeLang
-                    })
+                const data = await window.api_invoke('ai_tool', {
+                    tool: 'complications',
+                    style: '',
+                    text: text,
+                    lang: window.activeLang
                 });
-
-                const data = await response.json();
-                if (response.ok) {
-                    resultContainer.innerText = data.message;
-                } else {
-                    resultContainer.innerText = (translations["error_ai_complications"] || "Error: Failed to generate complications.") + (data.error ? " " + data.error : "");
-                }
+                resultContainer.innerText = data.message;
             } catch (err) {
                 console.error("AI Complications error:", err);
                 resultContainer.innerText = translations["error_ai_service_connect"] || "Error: Failed to connect to AI service.";
@@ -578,26 +540,13 @@
             resultContainer.classList.remove('hidden');
 
             try {
-                const response = await fetch('/api/ai', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tool: 'names',
-                        style: styleInput,
-                        text: "", // Text is not needed for names generation
-                        temperature: (projectData && projectData.settings && projectData.settings.ai_temperature !== undefined) ? projectData.settings.ai_temperature : 0.7,
-                        model: (projectData && projectData.settings) ? projectData.settings.ai_model : "llama3",
-                        inject_lore_context: false,
-                        lang: window.activeLang
-                    })
+                const data = await window.api_invoke('ai_tool', {
+                    tool: 'names',
+                    style: styleInput,
+                    text: "", // Text is not needed for names generation
+                    lang: window.activeLang
                 });
-
-                const data = await response.json();
-                if (response.ok) {
-                    resultContainer.innerText = data.message;
-                } else {
-                    resultContainer.innerText = (translations["error_ai_names"] || "Error: Failed to generate names.") + (data.error ? " " + data.error : "");
-                }
+                resultContainer.innerText = data.message;
             } catch (err) {
                 console.error("AI Names error:", err);
                 resultContainer.innerText = translations["error_ai_service_connect"] || "Error: Failed to connect to AI service.";

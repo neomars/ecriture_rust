@@ -75,5 +75,40 @@ Le projet `ecriture-rust` est construit avec :
 
 Le modèle de données utilise un format de fichier JSON pour stocker l'intégralité du roman (paramètres, manuscrit, intrigue, personnages, notes).
 
+## État de la migration du backend
+
+Le backend Rust est réparti en deux crates sous `ecriture-rust/` :
+
+- **`ecriture-core`** — la logique métier, indépendante de Tauri, entièrement
+  couverte par des tests unitaires et d'intégration : persistance des
+  projets et édition de l'arbre du manuscrit, export txt/docx/pdf/odt/epub/mobi,
+  recherche de synonymes en français (base `lexique.db` embarquée),
+  sauvegardes locales au format JSON, chaînes de traduction, gabarits de
+  prompts IA + réponses de secours hors-ligne, et comparaison de versions
+  pour la mise à jour.
+- **`src-tauri`** — de fines commandes `#[tauri::command]` qui appellent
+  `ecriture-core`, exposées au frontend via `window.__TAURI__`.
+
+Lancez `cargo test` dans `ecriture-rust/ecriture-core` pour exécuter la
+suite complète de tests de non-régression/qualité/vérification des
+fonctionnalités (plus de 60 tests, dont un test de non-régression sur la
+vraie base `lexique.db`). Lancez `cargo clippy` dans chaque crate pour les
+vérifications de qualité de code.
+
+**Limites connues par rapport à l'application Python d'origine** (suivies
+comme travail futur, jamais simulées silencieusement) :
+- Aucun moteur d'inférence IA local n'est embarqué. Les outils IA
+  contextuels (décrire, réécrire, développer, relecture, chat) renvoient
+  le même texte de secours « simulé » que l'application Python affiche
+  quand aucun modèle local n'est installé. Un vrai moteur peut être branché
+  via le trait `ecriture_core::ai::AiBackend`.
+- La recherche de synonymes ne dispose de vraies données qu'en français.
+  L'application Python utilisait en plus NLTK WordNet + spaCy pour
+  l'anglais, l'espagnol et le russe ; il n'existe pas d'équivalent pur Rust,
+  donc ces langues renvoient une liste vide plutôt que de simuler un résultat.
+- Les intégrations natives nécessitant des plugins Tauri supplémentaires
+  (sélecteur de dossier pour les sauvegardes, import de documents
+  `.docx`/`.odt`/`.epub`, chat IA en streaming, téléchargement de mise à
+  jour) ne sont pas encore branchées.
 
 > *Note : Pour la version anglaise de ce README, veuillez consulter [README.md](README.md).*

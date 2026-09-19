@@ -121,15 +121,8 @@
             menu.innerHTML = `<div class="text-[10px] text-slate-400 p-2 italic">${window.activeLang === 'fr' ? 'Recherche...' : 'Searching...'}</div>`;
 
             try {
-                const res = await fetch('/api/synonyms', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ word: selectedText, lang: window.activeLang })
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    const synonyms = data.synonyms || [];
+                {
+                    const synonyms = await window.api_invoke('get_synonyms', { word: selectedText, lang: window.activeLang }) || [];
 
                     if (synonyms.length === 0) {
                         menu.innerHTML = `<div class="text-[10px] text-slate-400 p-2 italic">${window.activeLang === 'fr' ? 'Aucun synonyme' : 'No synonyms found'}</div>`;
@@ -140,8 +133,6 @@
                             </button>
                         `).join('');
                     }
-                } else {
-                    menu.innerHTML = `<div class="text-[10px] text-red-400 p-2 italic">${window.activeLang === 'fr' ? 'Erreur de chargement' : 'Loading error'}</div>`;
                 }
             } catch (err) {
                 console.error("Synonyms load error:", err);
@@ -255,15 +246,9 @@
             listContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Recherche de synonymes... / Searching...</span>`;
 
             try {
-                const response = await fetch('/api/synonyms', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ word: word, lang: window.activeLang })
-                });
-                const data = await response.json();
+                const synonyms = await window.api_invoke('get_synonyms', { word: word, lang: window.activeLang }) || [];
 
                 listContainer.innerHTML = "";
-                const synonyms = data.synonyms || [];
 
                 if (synonyms.length === 0) {
                     listContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Aucun synonyme trouvé / No synonyms found</span>`;
