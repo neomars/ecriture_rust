@@ -4727,6 +4727,21 @@ function closeGemmaInstallingModal() {
 // Merged from ia.js (contextual AI tools, chat, relecture AI,
 // character extraction, local Gemma install flow).
 // ============================================================
+
+        // Resolves after the browser has actually painted the DOM changes
+        // made just before calling this - a single microtask/await isn't
+        // enough of a guarantee, since a Promise resolving on the same tick
+        // (or very quickly) can let the JS engine race ahead to the next
+        // await before the renderer gets a frame in. Every "show a loading
+        // state, then kick off a possibly slow AI call" flow below awaits
+        // this between the two, so the loading state (hourglass + message)
+        // is always visible for at least one real frame before the request
+        // that may take seconds (or, on first use, minutes while Gemma
+        // loads) is even sent.
+        function waitForNextPaint() {
+            return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        }
+
         // CONTEXTUAL AI TOOLS (Describe, Rewrite, Expand)
         let activeSelection = { start: 0, end: 0, text: "" };
         let lastAiToolCall = { tool: "", style: "", text: "" };
@@ -4811,6 +4826,8 @@ function closeGemmaInstallingModal() {
                 titleText = formatTranslation("ai_sensory") || "Détails Sensoriels";
             }
             document.getElementById('ai-preview-tool-title').innerText = titleText;
+
+            await waitForNextPaint();
 
             try {
                 const data = await window.api_invoke('ai_tool', {
@@ -4919,6 +4936,7 @@ function closeGemmaInstallingModal() {
             }
 
             feedbackEl.innerHTML = `<span class="ai-hourglass inline-block">⏳</span> ${translations["ai_analysis_in_progress"] || "AI analysis in progress... Please wait."}`;
+            await waitForNextPaint();
 
             try {
                 let loreContext = "";
@@ -5002,6 +5020,7 @@ function closeGemmaInstallingModal() {
             const loadingIndex = chatMessages.length;
             chatMessages.push({ role: "assistant", content: "...", loading: true });
             renderChat();
+            await waitForNextPaint();
 
             try {
                 const data = await window.api_invoke('ai_chat', {
@@ -5030,6 +5049,7 @@ function closeGemmaInstallingModal() {
             const originalContent = btn.innerHTML;
             btn.innerHTML = `<span class="ai-hourglass inline-block">⏳</span> ${translations["analyzing"] || "Analyzing and generating..."}`;
             btn.disabled = true;
+            await waitForNextPaint();
 
             try {
                 {
@@ -5162,6 +5182,7 @@ function closeGemmaInstallingModal() {
             const loadingIdx = interviewMessages.length;
             interviewMessages.push({ role: "assistant", content: "...", loading: true });
             renderInterviewChat();
+            await waitForNextPaint();
 
             try {
                 const data = await window.api_invoke('ai_chat', {
