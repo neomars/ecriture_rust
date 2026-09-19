@@ -35,6 +35,18 @@ This project is a Rust port (using Tauri for the frontend) of the original appli
 1. **Rust & Cargo:** You must have Rust installed on your system. You can install it via [rustup](https://rustup.rs/).
 2. **Node.js & npm:** Make sure you have Node.js installed. You can download it from [nodejs.org](https://nodejs.org/).
 3. **Tauri Prerequisites:** Follow the official Tauri guide to install the system dependencies required for compilation (specific to Windows, macOS, or Linux): [Tauri Prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites).
+4. **llama.cpp build toolchain:** the local AI engine (`llama-cpp-2`) compiles llama.cpp from source at build time via `cmake` + `bindgen`, which needs a C/C++ compiler and `clang` (for `libclang`, used to generate FFI bindings):
+   - Debian/Ubuntu: `sudo apt install build-essential cmake clang libclang-dev`
+   - Fedora: `sudo dnf install gcc gcc-c++ cmake clang clang-devel`
+   - Arch: `sudo pacman -S base-devel cmake clang`
+   - macOS: `xcode-select --install` (gives you clang + cmake via Homebrew: `brew install cmake`)
+
+   If the build fails with `fatal error: 'stdbool.h' file not found` (or a similar missing standard-header error) even after installing `clang`, `bindgen`'s `libclang` isn't finding that clang installation's own bundled headers. Point it there explicitly:
+   ```bash
+   export BINDGEN_EXTRA_CLANG_ARGS="-I$(clang -print-resource-dir)/include"
+   npm run tauri dev
+   ```
+   (add that `export` line to your shell profile so it's set for future runs too).
 
 ### Installation Steps
 
