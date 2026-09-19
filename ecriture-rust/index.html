@@ -1141,9 +1141,20 @@
     <script type="module" src="/src/tauri_init.ts"></script>
     <script type="module" src="/static/js/api.js"></script>
 
-    <script type="module" src="/static/js/moteur.js"></script>
-    <script type="module" src="/static/js/linguistique.js"></script>
-    <script type="module" src="/static/js/ia.js"></script>
+    <!--
+      app.js is intentionally a classic (non-module) deferred script, not
+      type="module". It's a single merged file (formerly moteur.js +
+      linguistique.js + ia.js) because it relies throughout on plain
+      top-level `let`/`function` declarations being visible as bare names
+      both across its own sections AND from inline onclick="..." HTML
+      attribute handlers in this page. ES modules give every file (and
+      every inline handler) its own isolated scope - none of that sharing
+      works under type="module", so this script deliberately opts out of
+      it. `defer` (rather than a plain blocking <script>) keeps the same
+      "runs after the DOM is parsed, in document order after the two
+      module scripts above" timing that type="module" gave it before.
+    -->
+    <script src="/static/js/app.js" defer></script>
 
     <!-- MODAL: RESTORE & IMPORT -->
     <div id="restore-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
