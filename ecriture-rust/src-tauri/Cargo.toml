@@ -31,6 +31,7 @@ ecriture-core = { path = "../ecriture-core" }
 gpu-cuda = ["ecriture-core/gpu-cuda"]
 gpu-rocm = ["ecriture-core/gpu-rocm"]
 gpu-metal = ["ecriture-core/gpu-metal"]
+gpu-vulkan = ["ecriture-core/gpu-vulkan"]
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

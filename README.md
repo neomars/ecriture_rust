@@ -149,6 +149,13 @@ output for `[ai] ggml backend devices` after your first AI request (it
 lists every device llama.cpp can see, GPU or not) to confirm it's
 actually being used.
 
+Not sure which (if any) applies to your machine? Run
+`ecriture-rust/scripts/detect-gpu.sh` - it inspects the actual hardware
+and installed SDKs on the machine it runs on (GPU vendor via `lspci`/
+`nvidia-smi`, CUDA/ROCm install, a working Vulkan driver, or no GPU at
+all) and prints which `--features gpu-*` flag to use, if any - CPU-only
+is always a safe fallback if nothing GPU-specific is detected.
+
 Pick the feature matching your GPU and pass it through when building:
 
 | Vendor | Feature | Needs installed first |
@@ -156,19 +163,45 @@ Pick the feature matching your GPU and pass it through when building:
 | NVIDIA | `gpu-cuda` | [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) |
 | AMD | `gpu-rocm` | [ROCm](https://rocm.docs.amd.com/) |
 | Apple Silicon / Intel Mac | `gpu-metal` | Xcode Command Line Tools (`xcode-select --install`) |
+| Any vendor (NVIDIA/AMD/Intel) via Vulkan | `gpu-vulkan` | Vulkan loader + a GLSL-to-SPIR-V compiler - see below |
 
 ```bash
 # from ecriture-rust/src-tauri
-cargo build --features gpu-cuda      # or gpu-rocm / gpu-metal
+cargo build --features gpu-cuda      # or gpu-rocm / gpu-metal / gpu-vulkan
 # or, to also run the desktop app with it:
 cargo tauri dev --features gpu-cuda
 ```
 
-There's no Vulkan option: this version of the `llama-cpp-2` bindings
-doesn't expose one, even though llama.cpp itself has a Vulkan backend -
-CUDA/ROCm/Metal are the only vendor backends currently wired through.
-Intel GPUs aren't covered either (llama.cpp's SYCL backend isn't among
-the bindings' feature flags).
+`gpu-vulkan` is the closest thing to a universal option: on a machine
+whose vendor doesn't have a `gpu-*` feature of its own above (or where
+you don't know which vendor's GPU is installed), it's the one to try
+first, since it drives the GPU through its own driver's Vulkan
+implementation rather than a vendor-specific toolkit. It isn't exposed by
+`llama-cpp-2` itself (only `llama-cpp-sys-2`, one layer below, has it),
+so `ecriture-core/Cargo.toml` depends on `llama-cpp-sys-2` directly just
+to reach that flag - Cargo's feature unification means it's still the
+exact same underlying crate `llama-cpp-2` already uses, not a second copy.
+It needs, at build time only:
+- Debian/Ubuntu: `sudo apt install libvulkan-dev glslc` (or
+  `libshaderc-dev`, which provides the same `glslc` shader compiler under
+  a different package name on some distros)
+- Fedora: `sudo dnf install vulkan-loader-devel shaderc`
+- Arch: `sudo pacman -S vulkan-icd-loader shaderc`
+- macOS: not supported (use `gpu-metal` instead) - Vulkan on Apple
+  platforms would go through the MoltenVK translation layer, which isn't
+  what llama.cpp's Vulkan backend targets here.
+- Windows: also needs the [Vulkan SDK](https://vulkan.lunarg.com/)
+  installed and `VULKAN_SDK` set (llama-cpp-sys-2's build script checks
+  for it on that platform only).
+
+At *run* time, Vulkan itself only needs the GPU's regular driver (the one
+you'd already have for any 3D application) - no separate toolkit to
+install on the machine actually running the app, unlike CUDA/ROCm.
+
+Intel GPUs have no dedicated feature of their own here (llama.cpp's SYCL
+backend isn't among the bindings' flags), but a discrete or integrated
+Intel GPU exposing a Vulkan driver (typical on Linux via Mesa's `ANV`
+driver) can still be reached through `gpu-vulkan`.
 
 **Not verified end-to-end in the environment this was built in**: that
 sandbox's network policy blocks `huggingface.co`, so the actual multi-GB

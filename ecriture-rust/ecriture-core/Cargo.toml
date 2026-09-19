@@ -19,20 +19,32 @@ thiserror = "1"
 time = { version = "0.3", features = ["formatting", "local-offset"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 llama-cpp-2 = "0.1"
+# Only pulled in directly to reach the `vulkan` CMake flag that
+# `llama-cpp-sys-2`'s build.rs supports but `llama-cpp-2` doesn't re-export
+# as a feature of its own; see `gpu-vulkan` below. Cargo unifies this with
+# the same crate llama-cpp-2 already depends on, so it's never a second
+# copy - nothing in ecriture-core calls into it directly.
+llama-cpp-sys-2 = { version = "0.1", optional = true }
 encoding_rs = "0.8"
 
 [features]
 # GPU acceleration for the local Gemma engine is opt-in: each backend
-# needs its vendor SDK installed at *build* time (CUDA toolkit, ROCm, or
-# the Metal SDK on macOS), which most machines don't have, so enabling
-# one unconditionally would break `cargo build` for everyone else the
-# same way the clang/bindgen requirement did before it was documented.
-# Pick the one matching your GPU and pass it through when building:
+# needs its vendor SDK installed at *build* time (CUDA toolkit, ROCm, the
+# Metal SDK on macOS, or the Vulkan SDK), which most machines don't have,
+# so enabling one unconditionally would break `cargo build` for everyone
+# else the same way the clang/bindgen requirement did before it was
+# documented. Pick the one matching your GPU and pass it through when
+# building:
 #   cargo build -p ecriture-rust --features ecriture-core/gpu-cuda
 # See the README's "Local AI (Gemma)" section for OS-specific setup.
 gpu-cuda = ["llama-cpp-2/cuda"]
 gpu-rocm = ["llama-cpp-2/rocm"]
 gpu-metal = ["llama-cpp-2/metal"]
+# Cross-vendor fallback (NVIDIA/AMD/Intel, via each vendor's Vulkan
+# driver) for machines where CUDA/ROCm/Metal don't apply - the closest
+# thing to a "works on any GPU" option, since only the loader + a shader
+# compiler are needed at build time rather than a multi-GB vendor toolkit.
+gpu-vulkan = ["dep:llama-cpp-sys-2", "llama-cpp-sys-2/vulkan"]
 
 [dev-dependencies]
 tempfile = "3"

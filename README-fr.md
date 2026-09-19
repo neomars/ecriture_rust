@@ -155,6 +155,14 @@ mauvais backend, ou un backend dont le SDK n'est pas installé, fait
 `[ai] ggml backend devices` listant chaque périphérique visible par
 llama.cpp, GPU ou non — pour confirmer qu'il est bien utilisé.
 
+Vous ne savez pas laquelle (s'il y en a une) s'applique à votre machine ?
+Lancez `ecriture-rust/scripts/detect-gpu.sh` — il inspecte le matériel et
+les SDK réellement installés sur la machine où il tourne (fabricant du
+GPU via `lspci`/`nvidia-smi`, installation de CUDA/ROCm, un pilote Vulkan
+fonctionnel, ou aucun GPU du tout) et affiche quelle feature `gpu-*`
+utiliser, le cas échéant — le CPU seul reste toujours un choix sûr si
+rien de spécifique à un GPU n'est détecté.
+
 Choisissez la fonctionnalité (feature) correspondant à votre GPU et
 transmettez-la à la compilation :
 
@@ -163,19 +171,49 @@ transmettez-la à la compilation :
 | NVIDIA | `gpu-cuda` | [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) |
 | AMD | `gpu-rocm` | [ROCm](https://rocm.docs.amd.com/) |
 | Apple Silicon / Mac Intel | `gpu-metal` | Outils en ligne de commande Xcode (`xcode-select --install`) |
+| N'importe quel fabricant (NVIDIA/AMD/Intel) via Vulkan | `gpu-vulkan` | Le loader Vulkan + un compilateur GLSL→SPIR-V — voir ci-dessous |
 
 ```bash
 # depuis ecriture-rust/src-tauri
-cargo build --features gpu-cuda      # ou gpu-rocm / gpu-metal
+cargo build --features gpu-cuda      # ou gpu-rocm / gpu-metal / gpu-vulkan
 # ou, pour aussi lancer l'app desktop avec :
 cargo tauri dev --features gpu-cuda
 ```
 
-Il n'y a pas d'option Vulkan : cette version des bindings `llama-cpp-2`
-n'en expose pas, même si llama.cpp possède lui-même un backend Vulkan —
-seuls CUDA/ROCm/Metal sont actuellement câblés dans les bindings. Les
-GPU Intel ne sont pas non plus couverts (le backend SYCL de llama.cpp
-ne fait pas partie des fonctionnalités exposées par les bindings).
+`gpu-vulkan` est l'option la plus proche d'un choix universel : sur une
+machine dont le fabricant n'a pas de feature `gpu-*` dédiée ci-dessus (ou
+si vous ne savez pas quel GPU est installé), c'est celle à essayer en
+premier, puisqu'elle pilote le GPU via le pilote Vulkan du fabricant
+plutôt qu'un kit de développement propre à chacun. Elle n'est pas exposée
+par `llama-cpp-2` lui-même (seul `llama-cpp-sys-2`, une couche en
+dessous, l'expose), donc `ecriture-core/Cargo.toml` dépend directement de
+`llama-cpp-sys-2` uniquement pour atteindre ce marqueur — grâce à
+l'unification des features de Cargo, il s'agit toujours exactement du
+même crate sous-jacent que celui déjà utilisé par `llama-cpp-2`, pas
+d'une deuxième copie. Elle nécessite, uniquement au moment de la
+compilation :
+- Debian/Ubuntu : `sudo apt install libvulkan-dev glslc` (ou
+  `libshaderc-dev`, qui fournit le même compilateur de shaders `glslc`
+  sous un autre nom de paquet sur certaines distributions)
+- Fedora : `sudo dnf install vulkan-loader-devel shaderc`
+- Arch : `sudo pacman -S vulkan-icd-loader shaderc`
+- macOS : non pris en charge (utilisez plutôt `gpu-metal`) — Vulkan sur
+  les plateformes Apple passerait par la couche de traduction MoltenVK,
+  ce qui n'est pas ce que cible ici le backend Vulkan de llama.cpp.
+- Windows : nécessite en plus le [Vulkan SDK](https://vulkan.lunarg.com/)
+  installé et la variable `VULKAN_SDK` définie (le script de build de
+  llama-cpp-sys-2 ne la vérifie que sur cette plateforme).
+
+À l'*exécution*, Vulkan n'a besoin que du pilote GPU habituel de la
+machine (celui déjà présent pour n'importe quelle application 3D) — pas
+de kit de développement séparé à installer sur la machine qui fait
+tourner l'app, contrairement à CUDA/ROCm.
+
+Les GPU Intel n'ont pas de feature dédiée ici (le backend SYCL de
+llama.cpp ne fait pas partie des fonctionnalités exposées par les
+bindings), mais un GPU Intel discret ou intégré exposant un pilote
+Vulkan (typiquement sous Linux via le pilote `ANV` de Mesa) reste
+accessible via `gpu-vulkan`.
 
 **Non vérifié de bout en bout dans l'environnement où ce code a été
 écrit** : la politique réseau de ce bac à sable bloque `huggingface.co`,
