@@ -233,5 +233,6 @@
   "rewrite_poetic": "Poético",
   "rewrite_brutal": "Brutal / Seco",
   "rewrite_cynical": "Cínico",
-  "pov_omniscient": "Omnisciente"
+  "pov_omniscient": "Omnisciente",
+  "gemma_not_bundled": "Esta versión aún no incluye un motor de IA local. Las herramientas de IA utilizan respuestas de reserva sin conexión."
 }
