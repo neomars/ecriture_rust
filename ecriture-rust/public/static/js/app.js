@@ -658,6 +658,20 @@ window.showConfirm = function(message) {
             return val;
         }
 
+        // Shared defaults for ai_tool/ai_relecture/ai_chat invoke() calls:
+        // the user's configured creativity temperature, whether lore
+        // auto-injection is enabled, and the currently open scene (lore is
+        // only injected when one is open).
+        function aiRequestDefaults() {
+            return {
+                temperature: (projectData && projectData.settings && projectData.settings.ai_temperature !== undefined)
+                    ? projectData.settings.ai_temperature : 0.7,
+                scene_id: (activeNodeType === "scene") ? activeNodeId : null,
+                inject_lore_context: (projectData && projectData.settings && projectData.settings.inject_lore_context !== undefined)
+                    ? !!projectData.settings.inject_lore_context : true,
+            };
+        }
+
 
         // SAVE STATE BACK TO JSON FILE
         async function persistProject() {
@@ -4794,7 +4808,8 @@ function closeGemmaInstallingModal() {
                     tool: tool,
                     style: style,
                     text: activeSelection.text,
-                    lang: window.activeLang
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
                 });
 
                 document.getElementById('ai-preview-loading').classList.add('hidden');
@@ -4878,7 +4893,7 @@ function closeGemmaInstallingModal() {
                 let loreContext = "";
                 if (activeRelectureCategory === "worldbuilding") {
                     loreContext = projectData.characters.map(c =>
-                        `Nom: ${c.name}\nApparence: ${c.appearance}\nTraits: ${c.traits.join(', ')}\nNotes: ${c.notes}\n`
+                        `Nom: ${c.name}\nApparence: ${c.appearance || ''}\nTraits: ${(c.traits || []).join(', ')}\nNotes: ${c.notes || ''}\n`
                     ).join('\n');
                 }
 
@@ -4886,7 +4901,9 @@ function closeGemmaInstallingModal() {
                     const data = await window.api_invoke('ai_relecture', {
                         category: activeRelectureCategory, // "style", "coherence" or "worldbuilding"
                         text: text,
-                        lang: window.activeLang
+                        lang: window.activeLang,
+                        temperature: aiRequestDefaults().temperature,
+                        lore_context: loreContext
                     });
                     feedbackEl.innerText = data.feedback;
                 } catch (aiErr) {
@@ -4954,7 +4971,8 @@ function closeGemmaInstallingModal() {
             try {
                 const data = await window.api_invoke('ai_chat', {
                     messages: chatMessages.slice(0, loadingIndex),
-                    lang: window.activeLang
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
                 });
                 chatMessages[loadingIndex] = { role: "assistant", content: data.message };
             } catch (err) {
@@ -5109,7 +5127,9 @@ function closeGemmaInstallingModal() {
             try {
                 const data = await window.api_invoke('ai_chat', {
                     messages: interviewMessages.slice(0, loadingIdx),
-                    lang: window.activeLang
+                    lang: window.activeLang,
+                    temperature: aiRequestDefaults().temperature,
+                    inject_lore_context: false // the character's lore is already in the system prompt built above
                 });
                 interviewMessages[loadingIdx].content = data.message;
             } catch (e) {
@@ -5191,7 +5211,8 @@ function closeGemmaInstallingModal() {
                     tool: 'complications',
                     style: '',
                     text: text,
-                    lang: window.activeLang
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
                 });
                 resultContainer.innerText = data.message;
             } catch (err) {
@@ -5217,7 +5238,8 @@ function closeGemmaInstallingModal() {
                     tool: 'names',
                     style: styleInput,
                     text: "", // Text is not needed for names generation
-                    lang: window.activeLang
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
                 });
                 resultContainer.innerText = data.message;
             } catch (err) {

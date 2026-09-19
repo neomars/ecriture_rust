@@ -254,21 +254,33 @@ struct AiToolResponse {
 /// failure, or a generation error), mirroring `ai_client.py`'s try/except
 /// structure in `main.py::handle_ai_tool`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // one JS-facing key per Tauri command arg; a struct would nest under one key instead
 fn ai_tool(
     tool: String,
     style: String,
     text: String,
     lang: String,
+    temperature: Option<f32>,
+    scene_id: Option<String>,
+    inject_lore_context: Option<bool>,
     state: State<AppState>,
 ) -> Result<AiToolResponse, String> {
-    let system_prompt = ai::build_tool_system_prompt(&tool, &style, &lang).map_err(|e| e.to_string())?;
+    let mut system_prompt = ai::build_tool_system_prompt(&tool, &style, &lang).map_err(|e| e.to_string())?;
+
+    if inject_lore_context.unwrap_or(true) {
+        if let Some(scene_id) = scene_id.as_deref().filter(|s| !s.is_empty()) {
+            if let Some(lore_ctx) = scene_lore_context(&state, scene_id) {
+                system_prompt = format!("{lore_ctx}\n\nConsignes de l'assistant :\n{system_prompt}");
+            }
+        }
+    }
 
     if let Some(engine) = get_or_load_engine(&state) {
         let messages = ai::normalize_gemma_messages(&[
             ai::ChatMessage { role: "system".into(), content: system_prompt },
             ai::ChatMessage { role: "user".into(), content: text.clone() },
         ]);
-        match ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
+        match ai::AiBackend::generate_chat(&*engine, &messages, temperature.unwrap_or(0.7)) {
             Ok(message) => return Ok(AiToolResponse { status: "success", message }),
             Err(e) => eprintln!("[ai] ai_tool: generation failed, falling back: {e}"),
         }
@@ -278,6 +290,18 @@ fn ai_tool(
         status: "offline_fallback",
         message: ai::fallback_response(&tool, &text, &style, &lang),
     })
+}
+
+/// Fetches lore context for `scene_id` from the active project, if any.
+fn scene_lore_context(state: &AppState, scene_id: &str) -> Option<String> {
+    let project_lock = state.active_project.lock().unwrap();
+    let project = project_lock.as_ref()?;
+    let ctx = ai::lore::build_scene_context(&project.data, scene_id);
+    if ctx.is_empty() {
+        None
+    } else {
+        Some(ctx)
+    }
 }
 
 #[derive(Serialize)]
@@ -294,6 +318,8 @@ fn ai_relecture(
     category: String,
     text: String,
     lang: String,
+    temperature: Option<f32>,
+    lore_context: Option<String>,
     state: State<AppState>,
 ) -> Result<AiRelectureResponse, String> {
     let fallback_category = match category.as_str() {
@@ -302,20 +328,16 @@ fn ai_relecture(
     };
 
     if let Some(engine) = get_or_load_engine(&state) {
-        let lang_name = match lang.as_str() {
-            "fr" => "French",
-            "es" => "Spanish",
-            "ru" => "Russian",
-            _ => "English",
-        };
-        let system_prompt = format!(
-            "You are a professional novel proofreader and copyeditor. Analyze the following text for {category} and provide detailed constructive feedback. Respond strictly in {lang_name}."
+        let system_prompt = ai::build_relecture_system_prompt(
+            &category,
+            &lang,
+            lore_context.as_deref().unwrap_or(""),
         );
         let messages = ai::normalize_gemma_messages(&[
             ai::ChatMessage { role: "system".into(), content: system_prompt },
             ai::ChatMessage { role: "user".into(), content: text.clone() },
         ]);
-        match ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
+        match ai::AiBackend::generate_chat(&*engine, &messages, temperature.unwrap_or(0.7)) {
             Ok(feedback) => return Ok(AiRelectureResponse { status: "success", feedback }),
             Err(e) => eprintln!("[ai] ai_relecture: generation failed, falling back: {e}"),
         }
@@ -338,13 +360,37 @@ struct AiChatResponse {
 /// first, with roles among "system"/"user"/"assistant".
 #[tauri::command]
 fn ai_chat(
-    messages: Vec<ai::ChatMessage>,
+    mut messages: Vec<ai::ChatMessage>,
     lang: String,
+    temperature: Option<f32>,
+    scene_id: Option<String>,
+    inject_lore_context: Option<bool>,
     state: State<AppState>,
 ) -> Result<AiChatResponse, String> {
+    let mut system_msgs = vec![format!(
+        "Respond strictly in this language: {}.",
+        match lang.as_str() {
+            "fr" => "French",
+            "es" => "Spanish",
+            "ru" => "Russian",
+            _ => "English",
+        }
+    )];
+    if inject_lore_context.unwrap_or(true) {
+        if let Some(scene_id) = scene_id.as_deref().filter(|s| !s.is_empty()) {
+            if let Some(lore_ctx) = scene_lore_context(&state, scene_id) {
+                system_msgs.push(ai::build_chat_lore_intro(&lang, &lore_ctx));
+            }
+        }
+    }
+    messages.insert(
+        0,
+        ai::ChatMessage { role: "system".into(), content: system_msgs.join("\n\n") },
+    );
+
     let normalized = ai::normalize_gemma_messages(&messages);
     if let Some(engine) = get_or_load_engine(&state) {
-        match ai::AiBackend::generate_chat(&*engine, &normalized, 0.7) {
+        match ai::AiBackend::generate_chat(&*engine, &normalized, temperature.unwrap_or(0.7)) {
             Ok(message) => return Ok(AiChatResponse { status: "success", message }),
             Err(e) => eprintln!("[ai] ai_chat: generation failed, falling back: {e}"),
         }
