@@ -298,6 +298,7 @@ window.showConfirm = function(message) {
         window.installGemmaModel = async function() {
             const progressDiv = document.getElementById('gemma-install-progress-container');
             if (progressDiv) progressDiv.classList.remove('hidden');
+            await waitForNextPaint();
 
             try {
                 const started = await window.api_invoke('ai_install_engine');
