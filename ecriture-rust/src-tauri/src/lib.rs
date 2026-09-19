@@ -16,40 +16,37 @@ use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 pub struct AppState {
     pub active_project: Mutex<Option<NovelProject>>,
     pub project_manager: ProjectManager,
-    pub base_dir: PathBuf,
+    /// Where the bundled `lexique.db` resource was found at startup, if any
+    /// (see [`resolve_lexique_db_path`]).
+    pub lexique_db_path: Option<PathBuf>,
 }
 
 /// Locates the bundled `lexique.db` (see `tauri.conf.json`'s
-/// `bundle.resources`), trying the handful of places it could plausibly
-/// live depending on how the app was launched: next to the working
-/// directory, next to the executable (typical for an installed bundle on
-/// Linux/Windows and inside a macOS `.app/Contents/Resources`), and
-/// finally the in-tree copy owned by `ecriture-core` for `cargo run`/
-/// `cargo tauri dev`.
-fn lexique_db_path(base_dir: &std::path::Path) -> PathBuf {
-    let mut candidates = vec![base_dir.join("resources").join("lexique.db")];
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            candidates.push(exe_dir.join("resources").join("lexique.db"));
-            candidates.push(exe_dir.join("..").join("Resources").join("resources").join("lexique.db"));
+/// `bundle.resources`). Tries Tauri's own resource resolver first - the
+/// correct, portable way to find a bundled resource both in a packaged app
+/// and under `cargo tauri dev` - then falls back to the in-tree copy owned
+/// by `ecriture-core` for a plain `cargo run`/`cargo test` invocation that
+/// has no `AppHandle` at all.
+fn resolve_lexique_db_path(app: &tauri::App) -> Option<PathBuf> {
+    if let Ok(path) = app
+        .path()
+        .resolve("resources/lexique.db", tauri::path::BaseDirectory::Resource)
+    {
+        if path.exists() {
+            return Some(path);
         }
     }
 
-    candidates.push(PathBuf::from(concat!(
+    let dev_fallback = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../ecriture-core/resources/lexique.db"
-    )));
-
-    candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("resources/lexique.db"))
+    ));
+    dev_fallback.exists().then_some(dev_fallback)
 }
 
 #[tauri::command]
@@ -169,11 +166,10 @@ fn get_synonyms(word: String, lang: String, state: State<AppState>) -> Result<Ve
     if word.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let db_path = lexique_db_path(&state.base_dir);
-    if !db_path.exists() {
+    let Some(db_path) = state.lexique_db_path.as_ref() else {
         return Ok(Vec::new());
-    }
-    let db = SynonymDb::open(&db_path).map_err(|e| e.to_string())?;
+    };
+    let db = SynonymDb::open(db_path).map_err(|e| e.to_string())?;
     db.lookup(&word, &lang).map_err(|e| e.to_string())
 }
 
@@ -271,23 +267,43 @@ fn backup_restore(folder_path: String, filename: String, state: State<AppState>)
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let base_dir = std::env::current_dir().unwrap();
-    let project_manager = ProjectManager::new(&base_dir);
-    project_manager.ensure_dirs().expect("failed to create projects directory");
-
-    let initial_project = project_manager
-        .load_active()
-        .expect("failed to load or create the initial project");
-
-    let state = AppState {
-        active_project: Mutex::new(Some(initial_project)),
-        project_manager,
-        base_dir,
-    };
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(state)
+        .setup(|app| {
+            // IMPORTANT: project data must NOT live under the `src-tauri`
+            // source tree. `cargo tauri dev` watches that directory and
+            // triggers a full rebuild + app restart on any file change; if
+            // every autosave writes there, the app appears to "crash" and
+            // need relaunching after every edit. The OS app-data directory
+            // is the correct, stable place for this regardless of whether
+            // the app is running from `cargo tauri dev` or a packaged
+            // install.
+            let base_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to resolve the app data directory");
+            std::fs::create_dir_all(&base_dir)
+                .expect("failed to create the app data directory");
+
+            let lexique_db_path = resolve_lexique_db_path(app);
+
+            let project_manager = ProjectManager::new(&base_dir);
+            project_manager
+                .ensure_dirs()
+                .expect("failed to create the projects directory");
+
+            let initial_project = project_manager
+                .load_active()
+                .expect("failed to load or create the initial project");
+
+            app.manage(AppState {
+                active_project: Mutex::new(Some(initial_project)),
+                project_manager,
+                lexique_db_path,
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_active_project,
             get_project_list,
