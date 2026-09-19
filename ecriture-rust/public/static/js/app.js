@@ -5263,8 +5263,9 @@ function closeGemmaInstallingModal() {
             }
 
             const resultContainer = document.getElementById('complications-result');
-            resultContainer.innerText = `⏳ ${translations["analyzing"] || "Analyzing and generating..."}`;
+            resultContainer.innerHTML = `<span class="ai-hourglass inline-block">⏳</span> ${translations["analyzing"] || "Analyzing and generating..."}`;
             resultContainer.classList.remove('hidden');
+            await waitForNextPaint();
 
             try {
                 const data = await window.api_invoke('ai_tool', {
@@ -5290,8 +5291,9 @@ function closeGemmaInstallingModal() {
             }
 
             const resultContainer = document.getElementById('names-result');
-            resultContainer.innerText = `⏳ ${translations["generating"] || "Generating..."}`;
+            resultContainer.innerHTML = `<span class="ai-hourglass inline-block">⏳</span> ${translations["generating"] || "Generating..."}`;
             resultContainer.classList.remove('hidden');
+            await waitForNextPaint();
 
             try {
                 const data = await window.api_invoke('ai_tool', {
