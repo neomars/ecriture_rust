@@ -25,6 +25,12 @@ serde_json = "1"
 uuid = { version = "1.26.1", features = ["v4"] }
 ecriture-core = { path = "../ecriture-core" }
 
+[features]
+# Passthrough so you can build/run from src-tauri without spelling out
+# ecriture-core/gpu-*. See ecriture-core/Cargo.toml for details.
+gpu-cuda = ["ecriture-core/gpu-cuda"]
+gpu-rocm = ["ecriture-core/gpu-rocm"]
+gpu-metal = ["ecriture-core/gpu-metal"]
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

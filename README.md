@@ -134,6 +134,42 @@ llama.cpp — the same engine the Python app drives through
   text the Python app shows when its model isn't installed — never an
   error dialog.
 
+#### GPU acceleration
+
+The engine always *asks* to offload every layer to a GPU
+(`n_gpu_layers` is set to a large value unconditionally); whether that
+actually happens depends on which GPU backend was compiled in. **By
+default, none is** — `cargo build`/`npm run tauri dev` produce a
+CPU-only build, deliberately, because each backend needs its vendor's
+SDK installed at *build* time, and assuming one is present would risk
+breaking the build the same way the undocumented clang/bindgen
+requirement did (see above). Enabling the wrong one, or one whose SDK
+isn't installed, fails the build; check `npm run tauri dev`'s terminal
+output for `[ai] ggml backend devices` after your first AI request (it
+lists every device llama.cpp can see, GPU or not) to confirm it's
+actually being used.
+
+Pick the feature matching your GPU and pass it through when building:
+
+| Vendor | Feature | Needs installed first |
+|---|---|---|
+| NVIDIA | `gpu-cuda` | [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) |
+| AMD | `gpu-rocm` | [ROCm](https://rocm.docs.amd.com/) |
+| Apple Silicon / Intel Mac | `gpu-metal` | Xcode Command Line Tools (`xcode-select --install`) |
+
+```bash
+# from ecriture-rust/src-tauri
+cargo build --features gpu-cuda      # or gpu-rocm / gpu-metal
+# or, to also run the desktop app with it:
+cargo tauri dev --features gpu-cuda
+```
+
+There's no Vulkan option: this version of the `llama-cpp-2` bindings
+doesn't expose one, even though llama.cpp itself has a Vulkan backend -
+CUDA/ROCm/Metal are the only vendor backends currently wired through.
+Intel GPUs aren't covered either (llama.cpp's SYCL backend isn't among
+the bindings' feature flags).
+
 **Not verified end-to-end in the environment this was built in**: that
 sandbox's network policy blocks `huggingface.co`, so the actual multi-GB
 download and a real generation could not be run there. The download

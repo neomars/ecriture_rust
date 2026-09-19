@@ -139,6 +139,44 @@ llama.cpp — le même moteur que l'application Python pilotait via
   secours « simulé » que l'application Python affiche quand son modèle
   n'est pas installé — jamais une boîte de dialogue d'erreur.
 
+#### Accélération GPU
+
+Le moteur *demande* toujours de décharger toutes les couches sur un GPU
+(`n_gpu_layers` est fixé à une valeur élevée sans condition) ; que cela
+se produise réellement dépend du backend GPU compilé. **Par défaut,
+aucun ne l'est** — `cargo build`/`npm run tauri dev` produisent une
+compilation CPU uniquement, volontairement, car chaque backend a besoin
+du SDK de son fabricant installé au moment de la *compilation*, et
+supposer sa présence risquerait de casser le build comme l'a fait le
+prérequis non documenté clang/bindgen (voir plus haut). Activer le
+mauvais backend, ou un backend dont le SDK n'est pas installé, fait
+échouer la compilation ; vérifiez la sortie terminal de
+`npm run tauri dev` après votre première requête IA — elle affiche
+`[ai] ggml backend devices` listant chaque périphérique visible par
+llama.cpp, GPU ou non — pour confirmer qu'il est bien utilisé.
+
+Choisissez la fonctionnalité (feature) correspondant à votre GPU et
+transmettez-la à la compilation :
+
+| Fabricant | Feature | Nécessite d'abord |
+|---|---|---|
+| NVIDIA | `gpu-cuda` | [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads) |
+| AMD | `gpu-rocm` | [ROCm](https://rocm.docs.amd.com/) |
+| Apple Silicon / Mac Intel | `gpu-metal` | Outils en ligne de commande Xcode (`xcode-select --install`) |
+
+```bash
+# depuis ecriture-rust/src-tauri
+cargo build --features gpu-cuda      # ou gpu-rocm / gpu-metal
+# ou, pour aussi lancer l'app desktop avec :
+cargo tauri dev --features gpu-cuda
+```
+
+Il n'y a pas d'option Vulkan : cette version des bindings `llama-cpp-2`
+n'en expose pas, même si llama.cpp possède lui-même un backend Vulkan —
+seuls CUDA/ROCm/Metal sont actuellement câblés dans les bindings. Les
+GPU Intel ne sont pas non plus couverts (le backend SYCL de llama.cpp
+ne fait pas partie des fonctionnalités exposées par les bindings).
+
 **Non vérifié de bout en bout dans l'environnement où ce code a été
 écrit** : la politique réseau de ce bac à sable bloque `huggingface.co`,
 donc le vrai téléchargement de plusieurs Go et une vraie génération n'ont

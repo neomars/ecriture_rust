@@ -21,6 +21,19 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 llama-cpp-2 = "0.1"
 encoding_rs = "0.8"
 
+[features]
+# GPU acceleration for the local Gemma engine is opt-in: each backend
+# needs its vendor SDK installed at *build* time (CUDA toolkit, ROCm, or
+# the Metal SDK on macOS), which most machines don't have, so enabling
+# one unconditionally would break `cargo build` for everyone else the
+# same way the clang/bindgen requirement did before it was documented.
+# Pick the one matching your GPU and pass it through when building:
+#   cargo build -p ecriture-rust --features ecriture-core/gpu-cuda
+# See the README's "Local AI (Gemma)" section for OS-specific setup.
+gpu-cuda = ["llama-cpp-2/cuda"]
+gpu-rocm = ["llama-cpp-2/rocm"]
+gpu-metal = ["llama-cpp-2/metal"]
+
 [dev-dependencies]
 tempfile = "3"
 temp-env = "0.3"
