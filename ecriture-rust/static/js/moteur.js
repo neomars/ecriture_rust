@@ -268,6 +268,7 @@ window.showConfirm = function(message) {
         async function checkGemmaStatus() {
             try {
                 const data = await window.api_invoke('ai_status');
+                console.log("ai_status:", data);
                 if (!data.installed) {
                     showGemmaMissingModal();
                     installGemmaModel();
@@ -299,9 +300,11 @@ window.showConfirm = function(message) {
             if (progressDiv) progressDiv.classList.remove('hidden');
 
             try {
-                await window.api_invoke('ai_install_engine');
+                const started = await window.api_invoke('ai_install_engine');
+                console.log("ai_install_engine:", started);
                 if (installPollInterval) clearInterval(installPollInterval);
                 installPollInterval = setInterval(pollInstallStatus, 1000);
+                pollInstallStatus(); // don't wait a full second for the first update
             } catch (e) {
                 console.error("Error starting Gemma installation:", e);
                 const statusText = document.getElementById('gemma-install-status-text');
@@ -312,6 +315,7 @@ window.showConfirm = function(message) {
         async function pollInstallStatus() {
             try {
                 const data = await window.api_invoke('ai_install_status');
+                console.log("ai_install_status:", data);
 
                 const statusText = document.getElementById('gemma-install-status-text');
                 const progressBar = document.getElementById('gemma-install-progress-bar');
@@ -319,9 +323,11 @@ window.showConfirm = function(message) {
 
                 if (data.status === 'error') {
                     clearInterval(installPollInterval);
+                    console.error("Gemma download failed:", data.message);
                     statusText.innerText = data.message || 'Erreur lors de l\'installation.';
                     progressBar.classList.replace('bg-indigo-600', 'bg-red-600');
-                    setTimeout(resetInstallModal, 5000);
+                    // Left visible on purpose (no auto-hide): the message is
+                    // the only place the actual failure reason shows up.
                 } else if (data.status === 'done') {
                     clearInterval(installPollInterval);
                     statusText.innerText = 'Terminé !';

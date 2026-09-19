@@ -440,6 +440,10 @@ fn ai_status(state: State<AppState>) -> Result<Value, String> {
     let cache_dir = model_store::model_cache_dir();
     let installed = model_store::is_model_installed(&cache_dir);
     let engine_loaded = state.ai_engine.lock().unwrap().is_some();
+    eprintln!(
+        "[ai] ai_status: cache_dir={} installed={installed} engine_loaded={engine_loaded}",
+        cache_dir.display()
+    );
     Ok(serde_json::json!({
         "status": if installed { "online" } else { "offline" },
         "installed": installed,
@@ -453,14 +457,17 @@ fn ai_status(state: State<AppState>) -> Result<Value, String> {
 /// Ports `main.py::install_engine` / `_install_gemma_thread`.
 #[tauri::command]
 fn ai_install_engine(state: State<AppState>) -> Result<Value, String> {
+    eprintln!("[ai] ai_install_engine invoked");
     {
         let current = state.ai_install.lock().unwrap();
         if current.status == "downloading" {
+            eprintln!("[ai] ai_install_engine: already downloading, ignoring");
             return Ok(serde_json::json!({"status": "success", "message": "Installation already in progress"}));
         }
     }
 
     let dest = model_store::model_path(&model_store::model_cache_dir());
+    eprintln!("[ai] starting Gemma download: {} -> {}", model_store::MODEL_URL, dest.display());
     let install_state = state.ai_install.clone();
     *install_state.lock().unwrap() = AiInstallState {
         status: "downloading".into(),
@@ -494,6 +501,7 @@ fn ai_install_engine(state: State<AppState>) -> Result<Value, String> {
         let mut s = install_state.lock().unwrap();
         match result {
             Ok(()) => {
+                eprintln!("[ai] Gemma download finished successfully");
                 *s = AiInstallState {
                     status: "done".into(),
                     message: "Installation complete.".into(),
@@ -502,6 +510,7 @@ fn ai_install_engine(state: State<AppState>) -> Result<Value, String> {
                 };
             }
             Err(e) => {
+                eprintln!("[ai] Gemma download failed: {e}");
                 *s = AiInstallState {
                     status: "error".into(),
                     message: format!("Download failed: {e}"),
