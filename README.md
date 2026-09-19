@@ -115,11 +115,14 @@ llama.cpp — the same engine the Python app drives through
 `bartowski/gemma-2-2b-it-GGUF` (`gemma-2-2b-it-Q8_0.gguf`, ~2.7 GB).
 
 - **Download destination** (`ecriture_core::ai::model_store::model_cache_dir`,
-  first writable candidate wins, identical order to the Python
-  `util.py::get_model_dir`): `$ECRITURE_MODEL_DIR` → `$XDG_CACHE_HOME/ecriture`
-  → `~/.cache/ecriture` → `<cwd>/ecriture_models` → the OS temp dir. A model
-  already downloaded by the Python app is picked up automatically (same
-  filename, same directory).
+  first writable candidate wins): `$ECRITURE_RUST_MODEL_DIR` →
+  `$XDG_CACHE_HOME/ecriture-rust` → `~/.cache/ecriture-rust` →
+  `<cwd>/ecriture-rust_models` → the OS temp dir. This is a **separate**
+  directory from the original Python app's `~/.cache/ecriture` (that
+  directory belongs to `github.com/neomars/ecriture` and is used for more
+  than just the model) — the two apps do not share a model file, so
+  expect a fresh ~2.7 GB download the first time you run this build even
+  if you already have the Python app's model installed.
 - The app downloads it automatically the first time no model is found
   (mirrors the "Gemma missing" install flow), streaming to a `.part` file
   and renaming it into place only once complete.
