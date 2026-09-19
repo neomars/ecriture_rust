@@ -1,31 +1,34 @@
-//! Resolves where the local Gemma GGUF model file lives on disk. Ports
-//! `util.py::get_model_dir` and the model path/filename constants from
-//! `ai_client.py`/`main.py`.
-
-use std::path::{Path, PathBuf};
-
-/// Exact filename `ai_client.py` uses, and the Hugging Face path it comes
-/// from (see `main.py::_install_gemma_thread`). Kept identical so a model
-/// downloaded by the Python app is recognised by this build and vice versa.
+//! Resolves where the local Gemma GGUF model file lives on disk.
+//!
+//! This is deliberately **independent** from the original Python app
+//! (`github.com/neomars/ecriture`), which caches its model under
+//! `~/.cache/ecriture` (see its `util.py::get_model_dir`). This Rust port
+//! (`github.com/neomars/ecriture-rust`) is a separate piece of software
+//! with its own working directory, `~/.cache/ecriture-rust` - the two
+//! don't share a model file, even though the Python directory happens to
+//! use a similarly-named cache folder for its own, unrelated data. The
+//! candidate order below otherwise mirrors the Python app's
+//! `util.py::get_model_dir` fallback strategy.
 pub const MODEL_FILENAME: &str = "gemma-2-2b-it-Q8_0.gguf";
 pub const MODEL_URL: &str =
     "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q8_0.gguf";
 
-/// The context window size the Python app loads the model with
-/// (`Llama(..., n_ctx=8192, ...)`).
+use std::path::{Path, PathBuf};
+
+/// The context window size the model is loaded with
+/// (matches the Python app's `Llama(..., n_ctx=8192, ...)`).
 pub const N_CTX: u32 = 8192;
 
-/// Environment variable that overrides the cache directory, matching
-/// `ECRITURE_MODEL_DIR` in the Python app.
-const ENV_OVERRIDE: &str = "ECRITURE_MODEL_DIR";
+/// Environment variable that overrides the cache directory.
+const ENV_OVERRIDE: &str = "ECRITURE_RUST_MODEL_DIR";
 
 /// Picks the best writable directory to store the model, trying candidates
-/// in the same order as `util.py::get_model_dir`:
-/// 1. `$ECRITURE_MODEL_DIR`
-/// 2. `$XDG_CACHE_HOME/ecriture`
-/// 3. `~/.cache/ecriture`
-/// 4. `<cwd>/ecriture_models`
-/// 5. `<system temp dir>/ecriture`
+/// in order:
+/// 1. `$ECRITURE_RUST_MODEL_DIR`
+/// 2. `$XDG_CACHE_HOME/ecriture-rust`
+/// 3. `~/.cache/ecriture-rust`
+/// 4. `<cwd>/ecriture-rust_models`
+/// 5. `<system temp dir>/ecriture-rust`
 ///
 /// Each candidate is probed with a real write (a throwaway file) so a
 /// read-only or missing filesystem is skipped rather than silently
@@ -40,16 +43,16 @@ pub fn model_cache_dir() -> PathBuf {
     }
     if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
         if !xdg.is_empty() {
-            candidates.push(PathBuf::from(xdg).join("ecriture"));
+            candidates.push(PathBuf::from(xdg).join("ecriture-rust"));
         }
     }
     if let Some(home) = std::env::var_os("HOME") {
-        candidates.push(PathBuf::from(home).join(".cache").join("ecriture"));
+        candidates.push(PathBuf::from(home).join(".cache").join("ecriture-rust"));
     }
     if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join("ecriture_models"));
+        candidates.push(cwd.join("ecriture-rust_models"));
     }
-    candidates.push(std::env::temp_dir().join("ecriture"));
+    candidates.push(std::env::temp_dir().join("ecriture-rust"));
 
     for candidate in &candidates {
         if is_writable_dir(candidate) {
@@ -59,7 +62,7 @@ pub fn model_cache_dir() -> PathBuf {
 
     // Last-resort fallback, matching the Python function's unconditional
     // final fallback.
-    let fallback = std::env::temp_dir().join("ecriture");
+    let fallback = std::env::temp_dir().join("ecriture-rust");
     let _ = std::fs::create_dir_all(&fallback);
     fallback
 }

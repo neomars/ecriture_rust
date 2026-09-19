@@ -117,11 +117,15 @@ llama.cpp — le même moteur que l'application Python pilotait via
 `bartowski/gemma-2-2b-it-GGUF` (`gemma-2-2b-it-Q8_0.gguf`, ~2,7 Go).
 
 - **Dossier de téléchargement** (`ecriture_core::ai::model_store::model_cache_dir`,
-  premier candidat inscriptible retenu, même ordre que le `util.py::get_model_dir`
-  Python) : `$ECRITURE_MODEL_DIR` → `$XDG_CACHE_HOME/ecriture` →
-  `~/.cache/ecriture` → `<répertoire courant>/ecriture_models` → le dossier
-  temp de l'OS. Un modèle déjà téléchargé par l'application Python est
-  automatiquement reconnu (même nom de fichier, même dossier).
+  premier candidat inscriptible retenu) : `$ECRITURE_RUST_MODEL_DIR` →
+  `$XDG_CACHE_HOME/ecriture-rust` → `~/.cache/ecriture-rust` →
+  `<répertoire courant>/ecriture-rust_models` → le dossier temp de l'OS.
+  C'est un dossier **séparé** de celui de l'application Python d'origine
+  (`~/.cache/ecriture`, qui appartient à `github.com/neomars/ecriture` et
+  sert à bien plus qu'au modèle) — les deux applications ne partagent pas
+  de fichier modèle, donc attendez-vous à un vrai téléchargement d'environ
+  2,7 Go au premier lancement de cette version, même si le modèle de
+  l'application Python est déjà installé.
 - L'app lance le téléchargement automatiquement dès qu'aucun modèle n'est
   trouvé (reprend le flux « Gemma manquant »), en écrivant d'abord dans un
   fichier `.part` puis en le renommant seulement une fois le transfert
