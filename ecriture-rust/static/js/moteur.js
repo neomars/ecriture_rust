@@ -258,25 +258,26 @@ window.showConfirm = function(message) {
             }
         };
 
-        // No local inference engine (e.g. llama.cpp/GGUF) is bundled with
-        // this build yet - see ecriture_core::ai module docs. Contextual AI
-        // tools transparently use an offline fallback instead. We still
-        // surface the "missing" modal once so the user knows why, but we
-        // deliberately do NOT attempt a fake download/install: there is
-        // nothing on the backend to call, and pretending otherwise just
-        // produces a confusing network-error popup.
+        // Checks whether the local Gemma engine is installed
+        // (ai_status/ai_install_engine/ai_install_status are real Tauri
+        // commands backed by ecriture_core::ai::{model_store,download} -
+        // see that module's docs for how the model is fetched and where
+        // it's cached on disk). If it's missing, show the informational
+        // modal and kick off the download automatically, matching the
+        // original app's behavior.
         async function checkGemmaStatus() {
             try {
                 const data = await window.api_invoke('ai_status');
                 if (!data.installed) {
-                    showGemmaMissingModal(data.sys_info);
+                    showGemmaMissingModal();
+                    installGemmaModel();
                 }
             } catch (err) {
                 console.error("Error checking Gemma status:", err);
             }
         }
 
-        function showGemmaMissingModal(sysInfo) {
+        function showGemmaMissingModal() {
             const modal = document.getElementById('gemma-missing-modal');
             if (modal) {
                 modal.classList.remove('hidden');
@@ -291,22 +292,59 @@ window.showConfirm = function(message) {
         }
         window.closeGemmaInstalledModal = closeGemmaInstalledModal;
 
-
-
-
         let installPollInterval = null;
 
-        // There is no download/install flow to run today (no bundled local
-        // inference engine - see checkGemmaStatus above). If this is ever
-        // wired up again it should call a real Tauri command instead of a
-        // fetch('/api/...') that has no backend to answer it.
         window.installGemmaModel = async function() {
-            const statusText = document.getElementById('gemma-install-status-text');
             const progressDiv = document.getElementById('gemma-install-progress-container');
             if (progressDiv) progressDiv.classList.remove('hidden');
-            if (statusText) {
-                statusText.innerText = translations["gemma_not_bundled"]
-                    || "Aucun moteur IA local n'est encore intégré à cette version. Les outils IA utilisent des réponses de secours hors-ligne.";
+
+            try {
+                await window.api_invoke('ai_install_engine');
+                if (installPollInterval) clearInterval(installPollInterval);
+                installPollInterval = setInterval(pollInstallStatus, 1000);
+            } catch (e) {
+                console.error("Error starting Gemma installation:", e);
+                const statusText = document.getElementById('gemma-install-status-text');
+                if (statusText) statusText.innerText = "Erreur lors du démarrage du téléchargement.";
+            }
+        }
+
+        async function pollInstallStatus() {
+            try {
+                const data = await window.api_invoke('ai_install_status');
+
+                const statusText = document.getElementById('gemma-install-status-text');
+                const progressBar = document.getElementById('gemma-install-progress-bar');
+                if (!statusText || !progressBar) return;
+
+                if (data.status === 'error') {
+                    clearInterval(installPollInterval);
+                    statusText.innerText = data.message || 'Erreur lors de l\'installation.';
+                    progressBar.classList.replace('bg-indigo-600', 'bg-red-600');
+                    setTimeout(resetInstallModal, 5000);
+                } else if (data.status === 'done') {
+                    clearInterval(installPollInterval);
+                    statusText.innerText = 'Terminé !';
+                    progressBar.style.width = '100%';
+                    progressBar.classList.replace('bg-indigo-600', 'bg-green-600');
+                    setTimeout(() => {
+                        const modal = document.getElementById('gemma-missing-modal');
+                        if (modal) modal.classList.add('hidden');
+                    }, 1500);
+                } else {
+                    let etaStr = '';
+                    if (data.eta_secs !== undefined && data.eta_secs !== null) {
+                        const mins = Math.floor(data.eta_secs / 60);
+                        const secs = Math.floor(data.eta_secs % 60);
+                        etaStr = mins > 0
+                            ? ` - Environ ${mins} min ${secs} sec restantes`
+                            : ` - Environ ${secs} sec restantes`;
+                    }
+                    statusText.innerText = `${data.message || 'Téléchargement en cours...'} (${data.progress}%)${etaStr}`;
+                    progressBar.style.width = data.progress + '%';
+                }
+            } catch (e) {
+                console.error("Error polling install status:", e);
             }
         }
 
@@ -315,15 +353,13 @@ window.showConfirm = function(message) {
 
             const progressDiv = document.getElementById('gemma-install-progress-container');
             const progressBar = document.getElementById('gemma-install-progress-bar');
+            if (progressDiv) progressDiv.classList.add('hidden');
 
             if(progressBar) {
                 progressBar.style.width = '0%';
                 progressBar.classList.remove('bg-red-600', 'bg-green-600');
                 progressBar.classList.add('bg-indigo-600');
             }
-
-            const btn = document.querySelector('button[onclick="installGemmaModel()"]');
-            if(btn) btn.disabled = false;
         }
 
 
@@ -2758,24 +2794,21 @@ function renderStatisticsDashboard() {
             const activeModel = projectData.settings.ai_model || "llama3";
 
             try {
-                const response = await fetch('/api/ai/models');
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.status === "success" && data.models && data.models.length > 0) {
-                        data.models.forEach(modelName => {
-                            const opt = document.createElement('option');
-                            opt.value = modelName;
-                            opt.textContent = modelName;
-                            selectEl.appendChild(opt);
-                        });
+                const data = await window.api_invoke('ai_models');
+                if (data.status === "success" && data.models && data.models.length > 0) {
+                    data.models.forEach(modelName => {
+                        const opt = document.createElement('option');
+                        opt.value = modelName;
+                        opt.textContent = modelName;
+                        selectEl.appendChild(opt);
+                    });
 
-                        if (data.models.includes(activeModel)) {
-                            selectEl.value = activeModel;
-                        } else {
-                            selectEl.value = data.models[0];
-                        }
-                        return;
+                    if (data.models.includes(activeModel)) {
+                        selectEl.value = activeModel;
+                    } else {
+                        selectEl.value = data.models[0];
                     }
+                    return;
                 }
             } catch (err) {
                 console.error("Failed to fetch Gemma models:", err);
