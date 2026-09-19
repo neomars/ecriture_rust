@@ -2,7 +2,7 @@
 name = "ecriture-core"
 version = "0.1.0"
 edition = "2021"
-description = "Core backend logic for Ecriture: project management, export, synonyms, backups, AI prompt plumbing. Framework-agnostic (no Tauri dependency) so it can be unit-tested in isolation."
+description = "Core backend logic for Ecriture: project management, export, synonyms, backups, and local Gemma AI (download + llama.cpp inference). Framework-agnostic (no Tauri dependency) so it can be unit-tested in isolation."
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -17,6 +17,10 @@ printpdf = "0.7"
 rusqlite = { version = "0.31", features = ["bundled"] }
 thiserror = "1"
 time = { version = "0.3", features = ["formatting", "local-offset"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+llama-cpp-2 = "0.1"
+encoding_rs = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
+temp-env = "0.3"

@@ -1,0 +1,9 @@
+# Belt-and-suspenders for the `tauri dev` file watcher: application data
+# must never be written inside `src-tauri` (see AppState/app_data_dir in
+# lib.rs). If that ever regresses, these paths are still excluded from
+# triggering a rebuild-and-restart loop.
+projects/
+active_project.txt
+resources/
+*.db
+*.sqlite

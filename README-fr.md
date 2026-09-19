@@ -95,20 +95,53 @@ fonctionnalités (plus de 60 tests, dont un test de non-régression sur la
 vraie base `lexique.db`). Lancez `cargo clippy` dans chaque crate pour les
 vérifications de qualité de code.
 
-**Limites connues par rapport à l'application Python d'origine** (suivies
-comme travail futur, jamais simulées silencieusement) :
-- Aucun moteur d'inférence IA local n'est embarqué. Les outils IA
-  contextuels (décrire, réécrire, développer, relecture, chat) renvoient
-  le même texte de secours « simulé » que l'application Python affiche
-  quand aucun modèle local n'est installé. Un vrai moteur peut être branché
-  via le trait `ecriture_core::ai::AiBackend`.
+### IA locale (Gemma)
+
+Les outils IA contextuels (décrire/réécrire/développer/POV/relecture/chat/
+extraction de personnages) s'exécutent sur un vrai modèle local via
+[`llama-cpp-2`](https://crates.io/crates/llama-cpp-2) (bindings Rust vers
+llama.cpp — le même moteur que l'application Python pilotait via
+`llama-cpp-python`), avec exactement le même fichier GGUF :
+`bartowski/gemma-2-2b-it-GGUF` (`gemma-2-2b-it-Q8_0.gguf`, ~2,7 Go).
+
+- **Dossier de téléchargement** (`ecriture_core::ai::model_store::model_cache_dir`,
+  premier candidat inscriptible retenu, même ordre que le `util.py::get_model_dir`
+  Python) : `$ECRITURE_MODEL_DIR` → `$XDG_CACHE_HOME/ecriture` →
+  `~/.cache/ecriture` → `<répertoire courant>/ecriture_models` → le dossier
+  temp de l'OS. Un modèle déjà téléchargé par l'application Python est
+  automatiquement reconnu (même nom de fichier, même dossier).
+- L'app lance le téléchargement automatiquement dès qu'aucun modèle n'est
+  trouvé (reprend le flux « Gemma manquant »), en écrivant d'abord dans un
+  fichier `.part` puis en le renommant seulement une fois le transfert
+  terminé.
+- Le formatage des prompts utilise le gabarit de chat embarqué dans le
+  fichier GGUF lui-même (le format `<start_of_turn>`/`<end_of_turn>` propre
+  à Gemma, via `LlamaModel::apply_chat_template`) plutôt qu'un gabarit
+  écrit à la main.
+- Si le modèle n'est pas encore installé, ou qu'une génération échoue pour
+  une raison quelconque, chaque commande IA retombe sur le même texte de
+  secours « simulé » que l'application Python affiche quand son modèle
+  n'est pas installé — jamais une boîte de dialogue d'erreur.
+
+**Non vérifié de bout en bout dans l'environnement où ce code a été
+écrit** : la politique réseau de ce bac à sable bloque `huggingface.co`,
+donc le vrai téléchargement de plusieurs Go et une vraie génération n'ont
+pas pu y être exécutés. La logique de téléchargement elle-même est testée
+unitairement contre un serveur HTTP local (cas de succès, erreur HTTP, et
+connexion refusée), et la séquence d'appels bas niveau à llama.cpp a été
+écrite en suivant l'exemple officiel `examples/simple` de `llama-cpp-2`.
+Merci de vérifier le premier vrai téléchargement et quelques requêtes IA
+sur votre machine et de signaler tout comportement inattendu.
+
+**Autres limites connues par rapport à l'application Python d'origine**
+(suivies comme travail futur, jamais simulées silencieusement) :
 - La recherche de synonymes ne dispose de vraies données qu'en français.
   L'application Python utilisait en plus NLTK WordNet + spaCy pour
   l'anglais, l'espagnol et le russe ; il n'existe pas d'équivalent pur Rust,
   donc ces langues renvoient une liste vide plutôt que de simuler un résultat.
 - Les intégrations natives nécessitant des plugins Tauri supplémentaires
   (sélecteur de dossier pour les sauvegardes, import de documents
-  `.docx`/`.odt`/`.epub`, chat IA en streaming, téléchargement de mise à
-  jour) ne sont pas encore branchées.
+  `.docx`/`.odt`/`.epub`, téléchargement de mise à jour) ne sont pas encore
+  branchées.
 
 > *Note : Pour la version anglaise de ce README, veuillez consulter [README.md](README.md).*

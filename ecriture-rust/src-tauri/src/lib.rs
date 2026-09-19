@@ -8,6 +8,8 @@
 //! mutable state behind a `Mutex`, and (3) mapping core errors to the
 //! `Result<_, String>` shape `#[tauri::command]` expects.
 
+use ecriture_core::ai::inference::LlamaEngine;
+use ecriture_core::ai::model_store;
 use ecriture_core::export::{self, ExportFormat};
 use ecriture_core::model::NovelData;
 use ecriture_core::synonyms::SynonymDb;
@@ -15,41 +17,65 @@ use ecriture_core::{ai, backup, locale, update, NovelProject, ProjectManager};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
-use std::sync::Mutex;
-use tauri::State;
+use std::sync::{Arc, Mutex};
+use tauri::{Manager, State};
 
 pub struct AppState {
     pub active_project: Mutex<Option<NovelProject>>,
     pub project_manager: ProjectManager,
-    pub base_dir: PathBuf,
+    /// Where the bundled `lexique.db` resource was found at startup, if any
+    /// (see [`resolve_lexique_db_path`]).
+    pub lexique_db_path: Option<PathBuf>,
+    /// The local Gemma engine, loaded lazily on first use (loading a
+    /// multi-gigabyte GGUF file takes real time, so we don't do it at
+    /// startup) and cached for the app's lifetime thereafter.
+    pub ai_engine: Mutex<Option<Arc<LlamaEngine>>>,
+    /// Progress of an in-flight (or just-finished) model download, polled
+    /// by the frontend. Shared with the background download thread.
+    pub ai_install: Arc<Mutex<AiInstallState>>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct AiInstallState {
+    /// "idle" | "downloading" | "done" | "error"
+    status: String,
+    message: String,
+    progress: u8,
+    eta_secs: Option<u64>,
+}
+
+impl Default for AiInstallState {
+    fn default() -> Self {
+        Self {
+            status: "idle".into(),
+            message: String::new(),
+            progress: 0,
+            eta_secs: None,
+        }
+    }
 }
 
 /// Locates the bundled `lexique.db` (see `tauri.conf.json`'s
-/// `bundle.resources`), trying the handful of places it could plausibly
-/// live depending on how the app was launched: next to the working
-/// directory, next to the executable (typical for an installed bundle on
-/// Linux/Windows and inside a macOS `.app/Contents/Resources`), and
-/// finally the in-tree copy owned by `ecriture-core` for `cargo run`/
-/// `cargo tauri dev`.
-fn lexique_db_path(base_dir: &std::path::Path) -> PathBuf {
-    let mut candidates = vec![base_dir.join("resources").join("lexique.db")];
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            candidates.push(exe_dir.join("resources").join("lexique.db"));
-            candidates.push(exe_dir.join("..").join("Resources").join("resources").join("lexique.db"));
+/// `bundle.resources`). Tries Tauri's own resource resolver first - the
+/// correct, portable way to find a bundled resource both in a packaged app
+/// and under `cargo tauri dev` - then falls back to the in-tree copy owned
+/// by `ecriture-core` for a plain `cargo run`/`cargo test` invocation that
+/// has no `AppHandle` at all.
+fn resolve_lexique_db_path(app: &tauri::App) -> Option<PathBuf> {
+    if let Ok(path) = app
+        .path()
+        .resolve("resources/lexique.db", tauri::path::BaseDirectory::Resource)
+    {
+        if path.exists() {
+            return Some(path);
         }
     }
 
-    candidates.push(PathBuf::from(concat!(
+    let dev_fallback = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../ecriture-core/resources/lexique.db"
-    )));
-
-    candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("resources/lexique.db"))
+    ));
+    dev_fallback.exists().then_some(dev_fallback)
 }
 
 #[tauri::command]
@@ -169,11 +195,10 @@ fn get_synonyms(word: String, lang: String, state: State<AppState>) -> Result<Ve
     if word.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let db_path = lexique_db_path(&state.base_dir);
-    if !db_path.exists() {
+    let Some(db_path) = state.lexique_db_path.as_ref() else {
         return Ok(Vec::new());
-    }
-    let db = SynonymDb::open(&db_path).map_err(|e| e.to_string())?;
+    };
+    let db = SynonymDb::open(db_path).map_err(|e| e.to_string())?;
     db.lookup(&word, &lang).map_err(|e| e.to_string())
 }
 
@@ -182,24 +207,72 @@ fn get_locale(lang: String) -> Result<Value, String> {
     locale::get_locale(&lang).map_err(|e| e.to_string())
 }
 
+/// Returns the already-loaded engine if there is one, otherwise loads it
+/// synchronously if the model file is present on disk. Loading blocks the
+/// calling command for a few seconds (spawning llama.cpp's backend +
+/// reading the GGUF file into RAM); that's an acceptable one-time cost on
+/// the first AI request, matching `ai_client.py`'s own lazy `_load_model`.
+/// Returns `None` (never an error) when no model is installed or loading
+/// fails, since every caller here treats "no engine" as "use the fallback".
+fn get_or_load_engine(state: &AppState) -> Option<Arc<LlamaEngine>> {
+    let mut guard = state.ai_engine.lock().unwrap();
+    if let Some(engine) = guard.as_ref() {
+        return Some(engine.clone());
+    }
+
+    let cache_dir = model_store::model_cache_dir();
+    if !model_store::is_model_installed(&cache_dir) {
+        return None;
+    }
+
+    let model_path = model_store::model_path(&cache_dir);
+    match LlamaEngine::load(&model_path, model_store::N_CTX) {
+        Ok(engine) => {
+            let engine = Arc::new(engine);
+            *guard = Some(engine.clone());
+            Some(engine)
+        }
+        Err(e) => {
+            eprintln!("Failed to load the local AI engine: {e}");
+            None
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct AiToolResponse {
     status: &'static str,
     message: String,
 }
 
-/// Runs a contextual writing tool (describe/rewrite/expand/...). No local
-/// inference engine is bundled (see `ecriture_core::ai` docs), so this
-/// always returns the offline simulated fallback today; a real backend can
-/// be plugged in later behind `ecriture_core::ai::AiBackend` without
-/// changing this command's signature.
+/// Runs a contextual writing tool (describe/rewrite/expand/...) through the
+/// local Gemma engine when it's installed and loads successfully; falls
+/// back to the offline simulated response otherwise (missing model, load
+/// failure, or a generation error), mirroring `ai_client.py`'s try/except
+/// structure in `main.py::handle_ai_tool`.
 #[tauri::command]
-fn ai_tool(tool: String, style: String, text: String, lang: String) -> Result<AiToolResponse, String> {
-    let _system_prompt = ai::build_tool_system_prompt(&tool, &style, &lang).map_err(|e| e.to_string())?;
-    let message = ai::fallback_response(&tool, &text, &style, &lang);
+fn ai_tool(
+    tool: String,
+    style: String,
+    text: String,
+    lang: String,
+    state: State<AppState>,
+) -> Result<AiToolResponse, String> {
+    let system_prompt = ai::build_tool_system_prompt(&tool, &style, &lang).map_err(|e| e.to_string())?;
+
+    if let Some(engine) = get_or_load_engine(&state) {
+        let messages = ai::normalize_gemma_messages(&[
+            ai::ChatMessage { role: "system".into(), content: system_prompt },
+            ai::ChatMessage { role: "user".into(), content: text.clone() },
+        ]);
+        if let Ok(message) = ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
+            return Ok(AiToolResponse { status: "success", message });
+        }
+    }
+
     Ok(AiToolResponse {
         status: "offline_fallback",
-        message,
+        message: ai::fallback_response(&tool, &text, &style, &lang),
     })
 }
 
@@ -210,27 +283,241 @@ struct AiRelectureResponse {
 }
 
 /// Runs the "relecture" (proofreading) assistant for a block of text.
-/// `category` is one of "style", "coherence" or "worldbuilding"; like
-/// [`ai_tool`], this always returns the offline fallback today.
+/// `category` is one of "style", "coherence" or "worldbuilding". Same
+/// real-engine-then-fallback strategy as [`ai_tool`].
 #[tauri::command]
-fn ai_relecture(category: String, text: String, lang: String) -> Result<AiRelectureResponse, String> {
+fn ai_relecture(
+    category: String,
+    text: String,
+    lang: String,
+    state: State<AppState>,
+) -> Result<AiRelectureResponse, String> {
     let fallback_category = match category.as_str() {
         "style" => "relecture_style",
         _ => "relecture_coherence",
     };
+
+    if let Some(engine) = get_or_load_engine(&state) {
+        let lang_name = match lang.as_str() {
+            "fr" => "French",
+            "es" => "Spanish",
+            "ru" => "Russian",
+            _ => "English",
+        };
+        let system_prompt = format!(
+            "You are a professional novel proofreader and copyeditor. Analyze the following text for {category} and provide detailed constructive feedback. Respond strictly in {lang_name}."
+        );
+        let messages = ai::normalize_gemma_messages(&[
+            ai::ChatMessage { role: "system".into(), content: system_prompt },
+            ai::ChatMessage { role: "user".into(), content: text.clone() },
+        ]);
+        if let Ok(feedback) = ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
+            return Ok(AiRelectureResponse { status: "success", feedback });
+        }
+    }
+
     Ok(AiRelectureResponse {
         status: "offline_fallback",
         feedback: ai::fallback_response(fallback_category, &text, "", &lang),
     })
 }
 
+#[derive(Serialize)]
+struct AiChatResponse {
+    status: &'static str,
+    message: String,
+}
+
+/// A freeform multi-turn chat with the local assistant (used by the AI
+/// chat sidebar). `messages` is the full conversation so far, oldest
+/// first, with roles among "system"/"user"/"assistant".
 #[tauri::command]
-fn ai_status() -> Result<Value, String> {
+fn ai_chat(
+    messages: Vec<ai::ChatMessage>,
+    lang: String,
+    state: State<AppState>,
+) -> Result<AiChatResponse, String> {
+    let normalized = ai::normalize_gemma_messages(&messages);
+    if let Some(engine) = get_or_load_engine(&state) {
+        if let Ok(message) = ai::AiBackend::generate_chat(&*engine, &normalized, 0.7) {
+            return Ok(AiChatResponse { status: "success", message });
+        }
+    }
+
+    let last_user_text = messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.as_str())
+        .unwrap_or("");
+    Ok(AiChatResponse {
+        status: "offline_fallback",
+        message: ai::fallback_response("chat", last_user_text, "", &lang),
+    })
+}
+
+#[tauri::command]
+fn ai_models() -> Result<Value, String> {
+    let installed = model_store::is_model_installed(&model_store::model_cache_dir());
     Ok(serde_json::json!({
-        "status": "offline",
-        "installed": false,
-        "message": "No local inference engine is bundled; contextual tools use the offline fallback simulator."
+        "status": if installed { "success" } else { "offline" },
+        "models": if installed { vec!["gemma-2-2b-it"] } else { Vec::<&str>::new() },
     }))
+}
+
+#[derive(Serialize)]
+struct AiExtractResponse {
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    characters: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+/// Extracts character sheets (name/appearance/traits/notes) from freeform
+/// text via the local engine. Unlike the writing tools above, there is no
+/// offline fallback for this one - structured JSON extraction isn't
+/// something a canned string can simulate - matching
+/// `main.py::api_extract_characters`, which likewise just reports an error
+/// when the model is unavailable or its output isn't parseable JSON.
+#[tauri::command]
+fn ai_extract_characters(text: String, lang: String, state: State<AppState>) -> Result<AiExtractResponse, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(AiExtractResponse {
+            status: "empty",
+            characters: Some(serde_json::json!([])),
+            message: None,
+        });
+    }
+
+    let Some(engine) = get_or_load_engine(&state) else {
+        return Ok(AiExtractResponse {
+            status: "error",
+            characters: None,
+            message: Some("No local AI engine is installed.".into()),
+        });
+    };
+
+    let system_prompt = format!("{}{}", ai::prompts::EXTRACT_LORE, lang_instruction_for(&lang));
+    let messages = ai::normalize_gemma_messages(&[
+        ai::ChatMessage { role: "system".into(), content: system_prompt },
+        ai::ChatMessage { role: "user".into(), content: text.to_string() },
+    ]);
+
+    match ai::AiBackend::generate_chat(&*engine, &messages, 0.1) {
+        Ok(content) => match ai::extract_json_array(&content) {
+            Some(characters) => Ok(AiExtractResponse {
+                status: "success",
+                characters: Some(characters),
+                message: None,
+            }),
+            None => Ok(AiExtractResponse {
+                status: "error",
+                characters: None,
+                message: Some("Failed to parse JSON response".into()),
+            }),
+        },
+        Err(e) => Ok(AiExtractResponse {
+            status: "error",
+            characters: None,
+            message: Some(e),
+        }),
+    }
+}
+
+fn lang_instruction_for(lang: &str) -> &'static str {
+    match lang {
+        "fr" => "Respond strictly in this language: French.",
+        "es" => "Respond strictly in this language: Spanish.",
+        "ru" => "Respond strictly in this language: Russian.",
+        _ => "Respond strictly in this language: English.",
+    }
+}
+
+#[tauri::command]
+fn ai_status(state: State<AppState>) -> Result<Value, String> {
+    let cache_dir = model_store::model_cache_dir();
+    let installed = model_store::is_model_installed(&cache_dir);
+    let engine_loaded = state.ai_engine.lock().unwrap().is_some();
+    Ok(serde_json::json!({
+        "status": if installed { "online" } else { "offline" },
+        "installed": installed,
+        "models": if installed { vec!["gemma-2-2b-it"] } else { Vec::<&str>::new() },
+        "engine_loaded": engine_loaded,
+    }))
+}
+
+/// Starts (or reports already-in-progress) a background download of the
+/// Gemma model into `ecriture_core::ai::model_store::model_cache_dir()`.
+/// Ports `main.py::install_engine` / `_install_gemma_thread`.
+#[tauri::command]
+fn ai_install_engine(state: State<AppState>) -> Result<Value, String> {
+    {
+        let current = state.ai_install.lock().unwrap();
+        if current.status == "downloading" {
+            return Ok(serde_json::json!({"status": "success", "message": "Installation already in progress"}));
+        }
+    }
+
+    let dest = model_store::model_path(&model_store::model_cache_dir());
+    let install_state = state.ai_install.clone();
+    *install_state.lock().unwrap() = AiInstallState {
+        status: "downloading".into(),
+        message: "Preparing...".into(),
+        progress: 0,
+        eta_secs: None,
+    };
+
+    std::thread::spawn(move || {
+        let started_at = std::time::Instant::now();
+        let result = ai::download::download_to_file(model_store::MODEL_URL, &dest, |downloaded, total| {
+            let mut s = install_state.lock().unwrap();
+            if let Some(total) = total {
+                if total > 0 {
+                    s.progress = ((downloaded as f64 / total as f64) * 100.0).min(99.0) as u8;
+                }
+                let elapsed = started_at.elapsed().as_secs_f64();
+                if elapsed > 0.5 && downloaded > 0 {
+                    let speed = downloaded as f64 / elapsed;
+                    let remaining = total.saturating_sub(downloaded) as f64;
+                    s.eta_secs = Some((remaining / speed).round() as u64);
+                }
+            }
+            let mb = |b: u64| b / 1_000_000;
+            s.message = match total {
+                Some(t) => format!("{} / {} Mo", mb(downloaded), mb(t)),
+                None => format!("{} Mo", mb(downloaded)),
+            };
+        });
+
+        let mut s = install_state.lock().unwrap();
+        match result {
+            Ok(()) => {
+                *s = AiInstallState {
+                    status: "done".into(),
+                    message: "Installation complete.".into(),
+                    progress: 100,
+                    eta_secs: None,
+                };
+            }
+            Err(e) => {
+                *s = AiInstallState {
+                    status: "error".into(),
+                    message: format!("Download failed: {e}"),
+                    progress: s.progress,
+                    eta_secs: None,
+                };
+            }
+        }
+    });
+
+    Ok(serde_json::json!({"status": "success", "message": "Installation started"}))
+}
+
+#[tauri::command]
+fn ai_install_status(state: State<AppState>) -> Result<AiInstallState, String> {
+    Ok(state.ai_install.lock().unwrap().clone())
 }
 
 #[tauri::command]
@@ -271,23 +558,45 @@ fn backup_restore(folder_path: String, filename: String, state: State<AppState>)
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let base_dir = std::env::current_dir().unwrap();
-    let project_manager = ProjectManager::new(&base_dir);
-    project_manager.ensure_dirs().expect("failed to create projects directory");
-
-    let initial_project = project_manager
-        .load_active()
-        .expect("failed to load or create the initial project");
-
-    let state = AppState {
-        active_project: Mutex::new(Some(initial_project)),
-        project_manager,
-        base_dir,
-    };
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(state)
+        .setup(|app| {
+            // IMPORTANT: project data must NOT live under the `src-tauri`
+            // source tree. `cargo tauri dev` watches that directory and
+            // triggers a full rebuild + app restart on any file change; if
+            // every autosave writes there, the app appears to "crash" and
+            // need relaunching after every edit. The OS app-data directory
+            // is the correct, stable place for this regardless of whether
+            // the app is running from `cargo tauri dev` or a packaged
+            // install.
+            let base_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to resolve the app data directory");
+            std::fs::create_dir_all(&base_dir)
+                .expect("failed to create the app data directory");
+
+            let lexique_db_path = resolve_lexique_db_path(app);
+
+            let project_manager = ProjectManager::new(&base_dir);
+            project_manager
+                .ensure_dirs()
+                .expect("failed to create the projects directory");
+
+            let initial_project = project_manager
+                .load_active()
+                .expect("failed to load or create the initial project");
+
+            app.manage(AppState {
+                active_project: Mutex::new(Some(initial_project)),
+                project_manager,
+                lexique_db_path,
+                ai_engine: Mutex::new(None),
+                ai_install: Arc::new(Mutex::new(AiInstallState::default())),
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_active_project,
             get_project_list,
@@ -300,7 +609,12 @@ pub fn run() {
             get_locale,
             ai_tool,
             ai_relecture,
+            ai_chat,
             ai_status,
+            ai_models,
+            ai_extract_characters,
+            ai_install_engine,
+            ai_install_status,
             check_updates,
             backup_create,
             backup_list,

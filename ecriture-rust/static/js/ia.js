@@ -237,27 +237,11 @@
             renderChat();
 
             try {
-                const injectLore = (projectData.settings.inject_lore_context !== undefined) ? projectData.settings.inject_lore_context : true;
-                const sceneId = (activeNodeType === "scene") ? activeNodeId : null;
-                const res = await fetch('/api/ai/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        messages: chatMessages.slice(0, loadingIndex),
-                        temperature: (projectData.settings.ai_temperature !== undefined) ? projectData.settings.ai_temperature : 0.7,
-                        model: projectData.settings.ai_model || "llama3",
-                        inject_lore_context: injectLore,
-                        scene_id: sceneId,
-                        lang: window.activeLang
-                    })
+                const data = await window.api_invoke('ai_chat', {
+                    messages: chatMessages.slice(0, loadingIndex),
+                    lang: window.activeLang
                 });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    chatMessages[loadingIndex] = { role: "assistant", content: data.message };
-                } else {
-                    chatMessages[loadingIndex] = { role: "assistant", content: translations["error_ai_chat"] || "Error: Could not retrieve response from AI." };
-                }
+                chatMessages[loadingIndex] = { role: "assistant", content: data.message };
             } catch (err) {
                 chatMessages[loadingIndex] = { role: "assistant", content: translations["error_network_connection"] || "Error: Network connection failed." };
             }
@@ -280,19 +264,8 @@
             btn.disabled = true;
 
             try {
-                const res = await fetch('/api/ai/extract_characters', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text: text,
-                        temperature: 0.1,
-                        model: projectData.settings.ai_model || "llama3",
-                        lang: window.activeLang
-                    })
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
+                {
+                    const data = await window.api_invoke('ai_extract_characters', { text: text, lang: window.activeLang });
                     if (data.status === "success" && data.characters && data.characters.length > 0) {
                         let newChars = 0;
                         data.characters.forEach(extractedChar => {
@@ -335,8 +308,6 @@
                     } else {
                         alert(translations["no_characters_detected"] || "No characters detected.");
                     }
-                } else {
-                    alert(translations["extraction_error"] || "Extraction error.");
                 }
             } catch (err) {
                 alert(translations["network_error"] || "Network error.");
@@ -421,24 +392,11 @@
             renderInterviewChat();
 
             try {
-                const res = await fetch('/api/ai/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        messages: interviewMessages.slice(0, loadingIdx),
-                        temperature: 0.8,
-                        model: projectData.settings.ai_model || "llama3",
-                        inject_lore_context: false, // We already injected it in system prompt
-                        lang: window.activeLang
-                    })
+                const data = await window.api_invoke('ai_chat', {
+                    messages: interviewMessages.slice(0, loadingIdx),
+                    lang: window.activeLang
                 });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    interviewMessages[loadingIdx].content = data.message;
-                } else {
-                    interviewMessages[loadingIdx].content = window.activeLang === 'fr' ? "Le personnage ne répond pas." : "Character doesn't reply.";
-                }
+                interviewMessages[loadingIdx].content = data.message;
             } catch (e) {
                 interviewMessages[loadingIdx].content = "Error.";
             }

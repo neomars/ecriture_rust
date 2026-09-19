@@ -1,15 +1,33 @@
-//! AI writing-assistant plumbing: system prompts and the offline fallback
-//! simulator. Ports `ai_prompts.py` and the non-inference parts of
-//! `ai_client.py`.
+//! AI writing-assistant plumbing: system prompts, the offline fallback
+//! simulator, the local Gemma GGUF download, and real local inference.
+//! Ports `ai_prompts.py` and `ai_client.py`.
 //!
-//! Actually running a local GGUF model (the Python app shells out to
-//! `llama-cpp-python` with a downloaded Gemma checkpoint) is intentionally
-//! out of scope for this crate: it needs a multi-gigabyte model download
-//! and a heavyweight native inference dependency, neither of which belongs
-//! in a unit-testable core library. [`AiBackend`] is the seam a real Tauri
-//! command layer can implement against (e.g. wrapping `llama_cpp-rs` or an
-//! HTTP call to a local inference server); [`fallback_response`] is what
-//! ships today and is exercised fully offline.
+//! - [`prompts`] / [`build_tool_system_prompt`] / [`fallback_response`] -
+//!   pure, fully unit-tested, no I/O.
+//! - [`model_store`] - resolves where the model file lives on disk and
+//!   whether it's installed. Pure/testable.
+//! - [`download`] - streams the GGUF file to disk with progress
+//!   reporting. The streaming/atomic-rename logic is unit-tested against a
+//!   local loopback HTTP server; it does not depend on any specific host.
+//! - [`inference`] - wraps `llama-cpp-2` (Rust bindings to llama.cpp, the
+//!   same engine the original Python app drives via `llama-cpp-python`) to
+//!   actually run the model. This cannot be exercised by this crate's own
+//!   test suite: it requires the real multi-gigabyte model file, which
+//!   this development environment's network policy blocks downloading
+//!   (`huggingface.co` is not reachable here). The lower-level llama.cpp
+//!   API usage itself was checked against the crate's own official example
+//!   (`examples/simple` in `utilityai/llama-cpp-rs`) to minimize the risk
+//!   of API-usage bugs; the model download and a real generation should
+//!   still be verified on a machine with an unrestricted network.
+//!
+//! [`AiBackend`] is the seam [`inference::LlamaEngine`] implements; the
+//! Tauri command layer tries it first and falls back to
+//! [`fallback_response`] on any error (missing model, load failure,
+//! generation error), mirroring `ai_client.py`'s try/except structure.
+
+pub mod download;
+pub mod inference;
+pub mod model_store;
 
 use crate::locale;
 
@@ -29,6 +47,8 @@ pub mod prompts {
     pub const COMPLICATIONS: &str = "You are an expert novelist's writing assistant specializing in plot dynamization. The author's scene is stuck and needs new narrative momentum.\nYour task is to propose exactly 3 unexpected but coherent narrative complications (e.g., an intruder enters, a secret is accidentally revealed, extreme weather occurs) that fit within the context of the provided text.\n\nFormat your response strictly as 3 bullet points. Provide vivid ideas that will force the characters to react immediately.\nDo NOT include any introductory or concluding remarks. Ensure the language of your output matches the language of the input text exactly (e.g., if the input is in French, write in French; if in English, write in English).";
 
     pub const NAMES: &str = "You are an expert novelist's writing assistant specializing in worldbuilding and linguistics. The author needs new contextual names/toponyms.\nYour task is to generate 10 unique, evocative names (characters, inns, planets, or cities) that strictly respect the linguistic roots or style specified by the author.\n\nHere is the context/style requested by the author: '{style}'\n\nFormat your response strictly as a numbered list of 10 names. You may add a brief (one sentence) explanation of the meaning or vibe of each name if appropriate.\nDo NOT include any introductory or concluding remarks. Ensure the language of your output matches the language of the prompt exactly (e.g., if the input is in French, write in French; if in English, write in English).";
+
+    pub const EXTRACT_LORE: &str = "You are an expert literary assistant specializing in worldbuilding and character extraction.\nAnalyze the following text and extract all named characters, their physical appearances, personality traits, distinctive habits/tics, kinship/relations, and any significant objects they possess.\nFormat your response strictly as a JSON array of objects. Each object must follow this structure:\n[\n  {\n    \"name\": \"Character Name\",\n    \"appearance\": \"Physical description...\",\n    \"traits\": [\"trait1\", \"trait2\"],\n    \"notes\": \"Any other significant details, tics, or objects possessed...\"\n  }\n]\nDo NOT include any markdown formatting blocks like ```json or introductory text. Return raw JSON only.";
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -54,6 +74,16 @@ pub fn build_tool_system_prompt(tool: &str, style: &str, lang: &str) -> Result<S
     Ok(format!("{template}{}", lang_instruction(lang)))
 }
 
+/// Pulls the first `[...]` JSON array out of a model response and parses
+/// it, tolerating models that wrap their JSON in prose or markdown code
+/// fences despite being told not to (ports the regex-based extraction in
+/// `main.py::api_extract_characters`).
+pub fn extract_json_array(text: &str) -> Option<serde_json::Value> {
+    let re = regex::Regex::new(r"(?s)\[.*\]").ok()?;
+    let m = re.find(text)?;
+    serde_json::from_str(m.as_str()).ok()
+}
+
 fn lang_instruction(lang: &str) -> String {
     let lang_name = match lang {
         "fr" => "French",
@@ -66,11 +96,72 @@ fn lang_instruction(lang: &str) -> String {
 
 /// A pluggable real inference backend. The bundled fallback simulator does
 /// not implement this trait - it's a plain function, since it never fails.
+/// [`inference::LlamaEngine`] implements this against a local Gemma GGUF
+/// model.
 pub trait AiBackend {
     fn generate_chat(&self, messages: &[ChatMessage], temperature: f32) -> Result<String, String>;
 }
 
-#[derive(Debug, Clone)]
+/// Reshapes an arbitrary system/user/assistant message list into the
+/// strictly-alternating, user-first form Gemma 2's chat template requires.
+/// Ports `AIClient.generate_chat`'s message normalization in
+/// `ai_client.py`: system messages are folded into the next user message,
+/// consecutive same-role messages are merged, and any assistant messages
+/// before the first user message are dropped (Gemma has no system role and
+/// cannot start a conversation on an assistant turn).
+pub fn normalize_gemma_messages(messages: &[ChatMessage]) -> Vec<ChatMessage> {
+    let mut formatted: Vec<ChatMessage> = Vec::new();
+    let mut pending_system: Vec<String> = Vec::new();
+
+    for msg in messages {
+        match msg.role.as_str() {
+            "system" => pending_system.push(msg.content.clone()),
+            "user" => {
+                let mut content = msg.content.clone();
+                if !pending_system.is_empty() {
+                    content = format!("{}\n\n{}", pending_system.join("\n\n"), content);
+                    pending_system.clear();
+                }
+                match formatted.last_mut() {
+                    Some(last) if last.role == "user" => {
+                        last.content = format!("{}\n\n{}", last.content, content);
+                    }
+                    _ => formatted.push(ChatMessage { role: "user".into(), content }),
+                }
+            }
+            "assistant" => match formatted.last_mut() {
+                Some(last) if last.role == "user" => {
+                    formatted.push(ChatMessage {
+                        role: "assistant".into(),
+                        content: msg.content.clone(),
+                    });
+                }
+                Some(last) if last.role == "assistant" => {
+                    last.content = format!("{}\n\n{}", last.content, msg.content);
+                }
+                _ => {} // drop a leading assistant message
+            },
+            _ => {}
+        }
+    }
+
+    if !pending_system.is_empty() {
+        let joined = pending_system.join("\n\n");
+        match formatted.last_mut() {
+            Some(last) if last.role != "assistant" => {
+                last.content = format!("{}\n\n{joined}", last.content);
+            }
+            _ => formatted.push(ChatMessage {
+                role: "user".into(),
+                content: joined,
+            }),
+        }
+    }
+
+    formatted
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
@@ -131,6 +222,87 @@ pub fn fallback_response(category: &str, user_text: &str, style: &str, lang: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn msg(role: &str, content: &str) -> ChatMessage {
+        ChatMessage { role: role.into(), content: content.into() }
+    }
+
+    #[test]
+    fn normalize_folds_leading_system_into_first_user_message() {
+        let out = normalize_gemma_messages(&[msg("system", "Be terse."), msg("user", "Hi")]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].role, "user");
+        assert_eq!(out[0].content, "Be terse.\n\nHi");
+    }
+
+    #[test]
+    fn normalize_drops_leading_assistant_message() {
+        let out = normalize_gemma_messages(&[msg("assistant", "unsolicited"), msg("user", "Hi")]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].role, "user");
+        assert_eq!(out[0].content, "Hi");
+    }
+
+    #[test]
+    fn normalize_merges_consecutive_same_role_messages() {
+        let out = normalize_gemma_messages(&[
+            msg("user", "part one"),
+            msg("user", "part two"),
+            msg("assistant", "reply one"),
+            msg("assistant", "reply two"),
+        ]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].content, "part one\n\npart two");
+        assert_eq!(out[1].content, "reply one\n\nreply two");
+    }
+
+    #[test]
+    fn normalize_appends_trailing_system_content_to_last_user_turn() {
+        let out = normalize_gemma_messages(&[msg("user", "Hi"), msg("system", "Stay in character.")]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].content, "Hi\n\nStay in character.");
+    }
+
+    #[test]
+    fn normalize_appends_trailing_system_content_as_new_user_turn_after_assistant() {
+        let out = normalize_gemma_messages(&[
+            msg("user", "Hi"),
+            msg("assistant", "Hello!"),
+            msg("system", "Remember: be brief."),
+        ]);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[2].role, "user");
+        assert_eq!(out[2].content, "Remember: be brief.");
+    }
+
+    #[test]
+    fn normalize_preserves_a_full_alternating_conversation_unchanged() {
+        let input = vec![msg("user", "Hi"), msg("assistant", "Hello!"), msg("user", "How are you?")];
+        let out = normalize_gemma_messages(&input);
+        assert_eq!(out.len(), 3);
+        for (a, b) in out.iter().zip(input.iter()) {
+            assert_eq!(a.role, b.role);
+            assert_eq!(a.content, b.content);
+        }
+    }
+
+    #[test]
+    fn extract_json_array_parses_a_clean_array() {
+        let value = extract_json_array(r#"[{"name":"Alice"}]"#).unwrap();
+        assert_eq!(value[0]["name"], "Alice");
+    }
+
+    #[test]
+    fn extract_json_array_strips_surrounding_prose_and_code_fences() {
+        let text = "Here you go:\n```json\n[{\"name\": \"Bob\"}]\n```\nHope that helps!";
+        let value = extract_json_array(text).unwrap();
+        assert_eq!(value[0]["name"], "Bob");
+    }
+
+    #[test]
+    fn extract_json_array_returns_none_for_non_json_text() {
+        assert!(extract_json_array("I couldn't find any characters.").is_none());
+    }
 
     #[test]
     fn build_tool_system_prompt_interpolates_style_and_language() {

@@ -93,18 +93,49 @@ regression/quality/feature-verification suite (60+ tests, including a
 non-regression test against the real `lexique.db`). Run `cargo clippy` in
 either crate for lint/quality checks.
 
-**Known gaps vs. the original Python app** (tracked as future work, not
-silently faked):
-- No local LLM inference is bundled. Contextual AI tools (describe,
-  rewrite, expand, relecture, chat) return the same offline "simulated"
-  fallback text the Python app shows when its local model isn't installed.
-  A real backend can be plugged in behind `ecriture_core::ai::AiBackend`.
+### Local AI (Gemma)
+
+Contextual AI tools (describe/rewrite/expand/POV/relecture/chat/character
+extraction) run on a real local model via
+[`llama-cpp-2`](https://crates.io/crates/llama-cpp-2) (Rust bindings to
+llama.cpp — the same engine the Python app drives through
+`llama-cpp-python`), with the same GGUF checkpoint the Python app used:
+`bartowski/gemma-2-2b-it-GGUF` (`gemma-2-2b-it-Q8_0.gguf`, ~2.7 GB).
+
+- **Download destination** (`ecriture_core::ai::model_store::model_cache_dir`,
+  first writable candidate wins, identical order to the Python
+  `util.py::get_model_dir`): `$ECRITURE_MODEL_DIR` → `$XDG_CACHE_HOME/ecriture`
+  → `~/.cache/ecriture` → `<cwd>/ecriture_models` → the OS temp dir. A model
+  already downloaded by the Python app is picked up automatically (same
+  filename, same directory).
+- The app downloads it automatically the first time no model is found
+  (mirrors the "Gemma missing" install flow), streaming to a `.part` file
+  and renaming it into place only once complete.
+- Prompting uses the chat template embedded in the GGUF file itself
+  (Gemma's own `<start_of_turn>`/`<end_of_turn>` format via
+  `LlamaModel::apply_chat_template`) rather than a hand-rolled template.
+- If the model isn't installed yet, or a generation fails for any reason,
+  every AI command falls back to the same offline "simulated" response
+  text the Python app shows when its model isn't installed — never an
+  error dialog.
+
+**Not verified end-to-end in the environment this was built in**: that
+sandbox's network policy blocks `huggingface.co`, so the actual multi-GB
+download and a real generation could not be run there. The download
+logic itself is unit-tested against a local HTTP server (success, HTTP
+error, and connection-refused cases), and the low-level llama.cpp call
+sequence was written against `llama-cpp-2`'s own official
+`examples/simple`. Please verify the first real download + a few AI
+requests on your machine and report anything unexpected.
+
+**Other known gaps vs. the original Python app** (tracked as future work,
+not silently faked):
 - Synonym lookup only has real data for French. The Python app additionally
   used NLTK WordNet + spaCy for English/Spanish/Russian; there is no
   equivalent pure-Rust crate, so those languages currently return an empty
   list rather than pretending to work.
 - Native OS integrations that need extra Tauri plugins (folder picker for
-  backups, document import from `.docx`/`.odt`/`.epub`, streaming AI chat,
-  live auto-update download) are not wired up yet.
+  backups, document import from `.docx`/`.odt`/`.epub`, live auto-update
+  download) are not wired up yet.
 
 > *Note: For the French version of this README, please see [README-fr.md](README-fr.md).*
