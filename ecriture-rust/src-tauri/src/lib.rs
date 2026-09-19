@@ -222,18 +222,21 @@ fn get_or_load_engine(state: &AppState) -> Option<Arc<LlamaEngine>> {
 
     let cache_dir = model_store::model_cache_dir();
     if !model_store::is_model_installed(&cache_dir) {
+        eprintln!("[ai] get_or_load_engine: no model file at {}", model_store::model_path(&cache_dir).display());
         return None;
     }
 
     let model_path = model_store::model_path(&cache_dir);
+    eprintln!("[ai] get_or_load_engine: loading {} (this can take a while)...", model_path.display());
     match LlamaEngine::load(&model_path, model_store::N_CTX) {
         Ok(engine) => {
+            eprintln!("[ai] get_or_load_engine: model loaded successfully");
             let engine = Arc::new(engine);
             *guard = Some(engine.clone());
             Some(engine)
         }
         Err(e) => {
-            eprintln!("Failed to load the local AI engine: {e}");
+            eprintln!("[ai] get_or_load_engine: FAILED to load model: {e}");
             None
         }
     }
@@ -265,8 +268,9 @@ fn ai_tool(
             ai::ChatMessage { role: "system".into(), content: system_prompt },
             ai::ChatMessage { role: "user".into(), content: text.clone() },
         ]);
-        if let Ok(message) = ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
-            return Ok(AiToolResponse { status: "success", message });
+        match ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
+            Ok(message) => return Ok(AiToolResponse { status: "success", message }),
+            Err(e) => eprintln!("[ai] ai_tool: generation failed, falling back: {e}"),
         }
     }
 
@@ -311,8 +315,9 @@ fn ai_relecture(
             ai::ChatMessage { role: "system".into(), content: system_prompt },
             ai::ChatMessage { role: "user".into(), content: text.clone() },
         ]);
-        if let Ok(feedback) = ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
-            return Ok(AiRelectureResponse { status: "success", feedback });
+        match ai::AiBackend::generate_chat(&*engine, &messages, 0.7) {
+            Ok(feedback) => return Ok(AiRelectureResponse { status: "success", feedback }),
+            Err(e) => eprintln!("[ai] ai_relecture: generation failed, falling back: {e}"),
         }
     }
 
@@ -339,8 +344,9 @@ fn ai_chat(
 ) -> Result<AiChatResponse, String> {
     let normalized = ai::normalize_gemma_messages(&messages);
     if let Some(engine) = get_or_load_engine(&state) {
-        if let Ok(message) = ai::AiBackend::generate_chat(&*engine, &normalized, 0.7) {
-            return Ok(AiChatResponse { status: "success", message });
+        match ai::AiBackend::generate_chat(&*engine, &normalized, 0.7) {
+            Ok(message) => return Ok(AiChatResponse { status: "success", message }),
+            Err(e) => eprintln!("[ai] ai_chat: generation failed, falling back: {e}"),
         }
     }
 
