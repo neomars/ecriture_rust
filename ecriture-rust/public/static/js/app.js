@@ -569,6 +569,7 @@ window.showConfirm = function(message) {
         async function loadProject() {
             try {
                 projectData = await window.api_invoke('get_active_project');
+                sceneUndoState.clear(); // discard undo history from whichever project was open before
 
                 // Normalize all characters to ensure backward compatibility
                 if (projectData && projectData.characters) {
@@ -1364,6 +1365,104 @@ function renderStatisticsDashboard() {
             }
         }
 
+        // ============================================================
+        // UNDO / REDO for the manuscript editor (Ctrl+Z / Ctrl+Shift+Z /
+        // Ctrl+Y). contenteditable's native undo is unreliable across the
+        // different WebView engines Tauri runs on (WebView2 on Windows,
+        // WebKit on macOS, WebKitGTK on Linux) - and several of this
+        // editor's own features already bypass it entirely: AI suggestions,
+        // smart quotes/dashes, page breaks, and the formatting toolbar all
+        // splice content in via the Range API or execCommand, none of
+        // which those engines consistently record onto their native undo
+        // stack the same way. This keeps an explicit undo/redo stack per
+        // scene instead, so Ctrl+Z behaves the same everywhere regardless
+        // of platform or which of those features made the change.
+        //
+        // Hooked into onCombinedEditorInput below - the single choke point
+        // every content-mutating code path in this file already runs
+        // through (typing, Enter, typography substitution, page breaks,
+        // toolbar formatting, synonym replacement, AI suggestions) - so
+        // there's nothing extra to wire up at each individual call site.
+        // ============================================================
+        const MAX_UNDO_STACK = 100;
+        const UNDO_DEBOUNCE_MS = 700;
+        const sceneUndoState = new Map(); // sceneId -> { undo: [...], redo: [...], pending, timer }
+
+        function getSceneUndoState(sceneId) {
+            let state = sceneUndoState.get(sceneId);
+            if (!state) {
+                state = { undo: [], redo: [], pending: true, timer: null };
+                sceneUndoState.set(sceneId, state);
+            }
+            return state;
+        }
+
+        // Called right before a scene's content is overwritten with its new
+        // value; previousContent is what it was a moment ago. Debounced like
+        // most editors' undo granularity: only the first change since the
+        // last pause (UNDO_DEBOUNCE_MS) is actually pushed, so a whole burst
+        // of typing undoes in one Ctrl+Z rather than one keystroke at a time.
+        function noteSceneChangeForUndo(sceneId, previousContent) {
+            const state = getSceneUndoState(sceneId);
+            if (state.pending) {
+                if (state.undo.length === 0 || state.undo[state.undo.length - 1] !== previousContent) {
+                    state.undo.push(previousContent);
+                    if (state.undo.length > MAX_UNDO_STACK) state.undo.shift();
+                }
+                state.redo = [];
+                state.pending = false;
+            }
+            if (state.timer) clearTimeout(state.timer);
+            state.timer = setTimeout(() => { state.pending = true; }, UNDO_DEBOUNCE_MS);
+        }
+
+        function placeCaretAtEnd(el) {
+            el.focus();
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            range.collapse(false);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        // Restores the previous/next snapshot for one scene and syncs it
+        // back into projectData + persistence, bypassing
+        // noteSceneChangeForUndo entirely (setting .innerHTML directly does
+        // not fire a native 'input' event, and we don't want the
+        // restoration itself treated as a new undoable change).
+        window.applyEditorUndoRedo = function applyEditorUndoRedo(sceneId, direction) {
+            const state = getSceneUndoState(sceneId);
+            const from = direction === 'undo' ? state.undo : state.redo;
+            const to = direction === 'undo' ? state.redo : state.undo;
+            if (from.length === 0) return false;
+
+            const chapter = findParentChapter(sceneId);
+            const scene = chapter && chapter.children ? chapter.children.find(s => s.id === sceneId) : null;
+            if (!scene) return false;
+
+            to.push(scene.content);
+            const restored = from.pop();
+
+            scene.content = restored;
+            const sceneEl = document.querySelector(`.editor-scene-contenteditable[data-scene-id="${sceneId}"]`);
+            if (sceneEl) {
+                sceneEl.innerHTML = restored.replace(/\n/g, '<br>');
+                placeCaretAtEnd(sceneEl);
+            }
+
+            state.pending = true;
+            if (state.timer) clearTimeout(state.timer);
+
+            triggerAutoSave();
+            updateEditorWordsCount();
+            const scrollContainer = document.getElementById('editor-scroll-container');
+            if (scrollContainer && scrollContainer.classList.contains('show-page-numbers')) {
+                applyPagination();
+            }
+            return true;
+        }
+
         // ACTIVE WORKSPACE REFRESH
         function onCombinedEditorInput(val, targetElement = null) {
             if (targetElement && targetElement.classList.contains('editor-scene-contenteditable')) {
@@ -1375,7 +1474,11 @@ function renderStatisticsDashboard() {
                     let scene = chapter.children.find(s => s.id === sceneId);
                     if (scene) {
                         let htmlVal = targetElement.innerHTML;
-                        scene.content = htmlVal.replace(/<br\s*\/?>/gi, '\n');
+                        const newContent = htmlVal.replace(/<br\s*\/?>/gi, '\n');
+                        if (newContent !== scene.content) {
+                            noteSceneChangeForUndo(sceneId, scene.content);
+                        }
+                        scene.content = newContent;
                         triggerAutoSave();
                     }
                 }
@@ -1391,7 +1494,11 @@ function renderStatisticsDashboard() {
                         let scene = chapter.children.find(s => s.id === sceneId);
                         if (scene) {
                             let htmlVal = ta.innerHTML;
-                            scene.content = htmlVal.replace(/<br\s*\/?>/gi, '\n');
+                            const newContent = htmlVal.replace(/<br\s*\/?>/gi, '\n');
+                            if (newContent !== scene.content) {
+                                noteSceneChangeForUndo(sceneId, scene.content);
+                            }
+                            scene.content = newContent;
                         }
                     }
                 });
@@ -1476,6 +1583,15 @@ function renderStatisticsDashboard() {
                         onCombinedEditorInput(null, ta);
                     });
                     ta.addEventListener('keydown', function(e) {
+                        const key = e.key.toLowerCase();
+                        const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z';
+                        const isRedo = ((e.ctrlKey || e.metaKey) && e.shiftKey && key === 'z') ||
+                            (e.ctrlKey && !e.metaKey && key === 'y');
+                        if (isUndo || isRedo) {
+                            e.preventDefault();
+                            window.applyEditorUndoRedo(ta.getAttribute('data-scene-id'), isUndo ? 'undo' : 'redo');
+                            return;
+                        }
                         if (e.key === 'Enter') {
                             e.preventDefault();
                             document.execCommand('insertLineBreak');
