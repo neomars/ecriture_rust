@@ -102,6 +102,46 @@ impl AiBackend for LlamaEngine {
     }
 }
 
+/// Requests as many transformer layers as possible be offloaded to a GPU.
+/// This is harmless on a CPU-only build (no `cuda`/`rocm`/`metal` Cargo
+/// feature enabled): with no GPU backend compiled in, llama.cpp finds no
+/// GPU device to offload to and silently runs entirely on CPU regardless
+/// of this value. Gemma-2-2b has far fewer than 1000 layers, so this
+/// offloads the whole model whenever a GPU backend *is* available.
+const GPU_LAYERS_ALL: u32 = 1000;
+
+fn log_backend_devices() {
+    let devices = llama_cpp_2::list_llama_ggml_backend_devices();
+    let gpu_count = devices
+        .iter()
+        .filter(|d| {
+            matches!(
+                d.device_type,
+                llama_cpp_2::LlamaBackendDeviceType::Gpu | llama_cpp_2::LlamaBackendDeviceType::IntegratedGpu
+            )
+        })
+        .count();
+    eprintln!("[ai] ggml backend devices ({} found, {gpu_count} GPU):", devices.len());
+    for d in &devices {
+        eprintln!(
+            "[ai]   [{}] {} ({}) via {} - {:?}, {} MiB free / {} MiB total",
+            d.index,
+            d.name,
+            d.description,
+            d.backend,
+            d.device_type,
+            d.memory_free / 1024 / 1024,
+            d.memory_total / 1024 / 1024,
+        );
+    }
+    if gpu_count == 0 {
+        eprintln!(
+            "[ai] no GPU backend compiled in (or no GPU detected) - running on CPU. \
+             See README for how to enable GPU acceleration for your hardware."
+        );
+    }
+}
+
 fn run_engine_thread(
     model_path: PathBuf,
     n_ctx: u32,
@@ -111,12 +151,14 @@ fn run_engine_thread(
     let loaded = LlamaBackend::init()
         .map_err(|e| InferenceError::Backend(e.to_string()))
         .and_then(|backend| {
-            let model =
-                LlamaModel::load_from_file(&backend, &model_path, &LlamaModelParams::default())
-                    .map_err(|e| InferenceError::ModelLoad {
-                        path: model_path.clone(),
-                        reason: e.to_string(),
-                    })?;
+            log_backend_devices();
+            let model_params = LlamaModelParams::default().with_n_gpu_layers(GPU_LAYERS_ALL);
+            let model = LlamaModel::load_from_file(&backend, &model_path, &model_params).map_err(|e| {
+                InferenceError::ModelLoad {
+                    path: model_path.clone(),
+                    reason: e.to_string(),
+                }
+            })?;
             Ok((backend, model))
         });
 

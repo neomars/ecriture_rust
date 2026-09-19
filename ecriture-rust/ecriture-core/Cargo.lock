@@ -262,6 +262,7 @@ dependencies = [
  "encoding_rs",
  "html-escape",
  "llama-cpp-2",
+ "llama-cpp-sys-2",
  "printpdf",
  "rand 0.8.8",
  "regex",
