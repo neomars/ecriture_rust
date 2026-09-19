@@ -27,6 +27,7 @@
 
 pub mod download;
 pub mod inference;
+pub mod lore;
 pub mod model_store;
 
 use crate::locale;
@@ -47,6 +48,22 @@ pub mod prompts {
     pub const COMPLICATIONS: &str = "You are an expert novelist's writing assistant specializing in plot dynamization. The author's scene is stuck and needs new narrative momentum.\nYour task is to propose exactly 3 unexpected but coherent narrative complications (e.g., an intruder enters, a secret is accidentally revealed, extreme weather occurs) that fit within the context of the provided text.\n\nFormat your response strictly as 3 bullet points. Provide vivid ideas that will force the characters to react immediately.\nDo NOT include any introductory or concluding remarks. Ensure the language of your output matches the language of the input text exactly (e.g., if the input is in French, write in French; if in English, write in English).";
 
     pub const NAMES: &str = "You are an expert novelist's writing assistant specializing in worldbuilding and linguistics. The author needs new contextual names/toponyms.\nYour task is to generate 10 unique, evocative names (characters, inns, planets, or cities) that strictly respect the linguistic roots or style specified by the author.\n\nHere is the context/style requested by the author: '{style}'\n\nFormat your response strictly as a numbered list of 10 names. You may add a brief (one sentence) explanation of the meaning or vibe of each name if appropriate.\nDo NOT include any introductory or concluding remarks. Ensure the language of your output matches the language of the prompt exactly (e.g., if the input is in French, write in French; if in English, write in English).";
+
+    pub const RELECTURE_STYLE_FR: &str = "Tu es un relecteur professionnel de romans et correcteur littéraire de style et prose.\nAnalyse le texte suivant et donne des retours constructifs détaillés.\nSuggère des améliorations précises de vocabulaire, de rythme des phrases, de style, de fluidité et des reformulations d'échantillons de texte s'il y a lieu.\nRéponds en français.";
+    pub const RELECTURE_STYLE_ES: &str = "Eres un corrector profesional de novelas y editor literario de estilo y prosa.\nAnaliza el siguiente texto y proporciona comentarios constructivos detallados.\nSugiere mejoras precisas de vocabulario, ritmo de oraciones, estilo, fluidez y reescrituras de muestra donde corresponda.\nResponde en español.";
+    pub const RELECTURE_STYLE_RU: &str = "Вы профессиональный корректор романов и литературный редактор стиля и прозы.\nПроанализируйте следующий текст и дайте подробные конструктивные отзывы.\nПредложите точные улучшения словарного запаса, ритма предложений, стиля, текучести и образцы перефразирования текста, где это применимо.\nОтвечайте на русском языке.";
+    pub const RELECTURE_STYLE_EN: &str = "You are a professional novel proofreader and copyeditor of style and prose.\nAnalyze the following text and provide detailed constructive feedback.\nSuggest precise improvements for vocabulary, sentence pacing, style, flow, and sample rewrites where applicable.\nRespond in English.";
+
+    pub const RELECTURE_COHERENCE_FR: &str = "Tu es un relecteur professionnel de romans et conseiller en cohérence narrative.\nAnalyse le texte suivant pour en évaluer la cohérence logique, les motivations et actions des personnages, la pertinence temporelle et spatiale, et signale toute anomalie ou incohérence flagrante.\nRéponds en français.";
+    pub const RELECTURE_COHERENCE_EN: &str = "You are a professional novel proofreader and narrative coherence consultant.\nAnalyze the following text to evaluate logical consistency, character motivations and actions, temporal and spatial sense, and flag any logical fallacies or glaring inconsistencies.\nRespond in English.";
+
+    pub const LORE_COHERENCE_FR: &str = "Tu es un relecteur professionnel de romans et expert en \"worldbuilding\" et cohérence.\nAnalyse le texte suivant en le comparant avec les fiches de personnages et de lore fournies ci-dessous.\nIdentifie les contradictions, les anachronismes et les incohérences (ex. : changement de couleur des yeux, objets modernes à une mauvaise époque, ou comportements allant contre les traits établis).\nVoici les données de référence :\n{lore_context}\n\nAnalyse le texte et liste toutes les incohérences trouvées, ou indique que tout est cohérent. Réponds en français.";
+
+    pub const LORE_COHERENCE_EN: &str = "You are a professional novel proofreader and expert in worldbuilding and consistency.\nAnalyze the following text by comparing it with the provided character and lore sheets below.\nIdentify contradictions, anachronisms, and inconsistencies (e.g., changing eye color, modern objects in the wrong era, or behaviors contradicting established traits).\nHere is the reference data:\n{lore_context}\n\nAnalyze the text and list all inconsistencies found, or state that everything is consistent. Respond in English.";
+
+    pub const LORE_COHERENCE_ES: &str = "Eres un experto corrector literario y consultor de coherencia narrativa, experto en worldbuilding (\"lore\").\nEl autor te ha proporcionado el texto de una escena junto con el contexto del Lore (personajes, lugares, conceptos) asociados a esta escena.\n\n=== LORE PROPORCIONADO ===\n{lore_context}\n=========================\n\nInstrucciones:\n1. Analiza cuidadosamente la escena a continuación.\n2. Compara activamente las acciones, descripciones o diálogos de la escena con los elementos del Lore proporcionados.\n3. Señala cualquier **contradicción**, **inconsistencia** o **anacronismo** entre la escena y el Lore. Por ejemplo: si un personaje tiene los ojos azules en el lore pero verdes en la escena; si usa magia sin tener el rasgo de mago; si el tono de la relación no coincide.\n4. Si todo es coherente, confírmalo explicando brevemente por qué.\n5. Responde estrictamente en español. Sé claro y constructivo.\n";
+
+    pub const LORE_COHERENCE_RU: &str = "Вы эксперт-корректор литературных произведений и консультант по повествовательной связности, специализирующийся на мироустройстве (\"лоре\").\nАвтор предоставил вам текст сцены вместе с контекстом Лора (персонажи, места, концепции), связанного с этой сценой.\n\n=== ПРЕДОСТАВЛЕННЫЙ ЛОР ===\n{lore_context}\n=========================\n\nИнструкции:\n1. Внимательно проанализируйте сцену ниже.\n2. Активно сравнивайте действия, описания или диалоги в сцене с предоставленными элементами Лора.\n3. Укажите на любое **противоречие**, **несоответствие** или **анахронизм** между сценой и Лором. Например: если у персонажа синие глаза в лоре, но зеленые в сцене; если он использует магию, не имея черты мага; если тон отношений не совпадает.\n4. Если все логично, подтвердите это, кратко объяснив, почему.\n5. Отвечайте строго на русском языке. Будьте ясны и конструктивны.\n";
 
     pub const EXTRACT_LORE: &str = "You are an expert literary assistant specializing in worldbuilding and character extraction.\nAnalyze the following text and extract all named characters, their physical appearances, personality traits, distinctive habits/tics, kinship/relations, and any significant objects they possess.\nFormat your response strictly as a JSON array of objects. Each object must follow this structure:\n[\n  {\n    \"name\": \"Character Name\",\n    \"appearance\": \"Physical description...\",\n    \"traits\": [\"trait1\", \"trait2\"],\n    \"notes\": \"Any other significant details, tics, or objects possessed...\"\n  }\n]\nDo NOT include any markdown formatting blocks like ```json or introductory text. Return raw JSON only.";
 }
@@ -82,6 +99,65 @@ pub fn extract_json_array(text: &str) -> Option<serde_json::Value> {
     let re = regex::Regex::new(r"(?s)\[.*\]").ok()?;
     let m = re.find(text)?;
     serde_json::from_str(m.as_str()).ok()
+}
+
+/// Builds the "worldbuilding coherence" relecture prompt, ported from
+/// `main.py::api_relecture_ai`'s `worldbuilding` branch (which picks one
+/// of four fully-localized `LORE_COHERENCE_PROMPT_*` templates rather than
+/// appending a language instruction to a shared template).
+pub fn build_lore_coherence_prompt(lang: &str, lore_context: &str) -> String {
+    let template = match lang {
+        "fr" => prompts::LORE_COHERENCE_FR,
+        "es" => prompts::LORE_COHERENCE_ES,
+        "ru" => prompts::LORE_COHERENCE_RU,
+        _ => prompts::LORE_COHERENCE_EN,
+    };
+    template.replace("{lore_context}", lore_context)
+}
+
+/// Builds the system prompt for the "relecture" (proofreading) assistant.
+/// `category` is one of `"style"`, `"coherence"` or `"worldbuilding"`;
+/// `lore_context` is only used for `"worldbuilding"` (pass an empty
+/// string otherwise). Ports `main.py::api_relecture_ai`'s prompt
+/// selection, including its narrower language support: `coherence` only
+/// has French and English prompts (any other language falls back to
+/// English), matching the original.
+pub fn build_relecture_system_prompt(category: &str, lang: &str, lore_context: &str) -> String {
+    match category {
+        "style" => match lang {
+            "fr" => prompts::RELECTURE_STYLE_FR,
+            "es" => prompts::RELECTURE_STYLE_ES,
+            "ru" => prompts::RELECTURE_STYLE_RU,
+            _ => prompts::RELECTURE_STYLE_EN,
+        }
+        .to_string(),
+        "worldbuilding" => build_lore_coherence_prompt(lang, lore_context),
+        _ => match lang {
+            "fr" => prompts::RELECTURE_COHERENCE_FR,
+            _ => prompts::RELECTURE_COHERENCE_EN,
+        }
+        .to_string(),
+    }
+}
+
+/// Builds the localized "here's the scene's lore, stay consistent with it"
+/// message the chat assistant's system prompt is prefixed with. Ports the
+/// per-language strings in `main.py::ai_chat`.
+pub fn build_chat_lore_intro(lang: &str, lore_context: &str) -> String {
+    match lang {
+        "fr" => format!(
+            "Voici des informations sur le contexte et le Lore de la scène en cours. Intègre et respecte ces éléments si nécessaire dans vos réponses :\n\n{lore_context}"
+        ),
+        "es" => format!(
+            "Aquí hay información sobre el contexto y la tradición de la escena actual. Integra y respeta estos elementos si es necesario en tus respuestas:\n\n{lore_context}"
+        ),
+        "ru" => format!(
+            "Здесь представлена информация о контексте и лоре текущей сцены. Интегрируйте и учитывайте эти элементы при необходимости в своих ответах:\n\n{lore_context}"
+        ),
+        _ => format!(
+            "Here is information on the context and lore of the current scene. Integrate and respect these elements if necessary in your answers:\n\n{lore_context}"
+        ),
+    }
 }
 
 fn lang_instruction(lang: &str) -> String {
@@ -302,6 +378,58 @@ mod tests {
     #[test]
     fn extract_json_array_returns_none_for_non_json_text() {
         assert!(extract_json_array("I couldn't find any characters.").is_none());
+    }
+
+    #[test]
+    fn build_chat_lore_intro_localizes_and_embeds_context() {
+        assert!(build_chat_lore_intro("fr", "Nom: Elara").contains("Nom: Elara"));
+        assert!(build_chat_lore_intro("fr", "x").starts_with("Voici des informations"));
+        assert!(build_chat_lore_intro("es", "x").starts_with("Aquí hay información"));
+        assert!(build_chat_lore_intro("ru", "x").starts_with("Здесь представлена"));
+        assert!(build_chat_lore_intro("en", "x").starts_with("Here is information"));
+        assert!(build_chat_lore_intro("de", "x").starts_with("Here is information"));
+    }
+
+    #[test]
+    fn build_relecture_system_prompt_picks_style_by_language() {
+        assert_eq!(build_relecture_system_prompt("style", "fr", ""), prompts::RELECTURE_STYLE_FR);
+        assert_eq!(build_relecture_system_prompt("style", "es", ""), prompts::RELECTURE_STYLE_ES);
+        assert_eq!(build_relecture_system_prompt("style", "ru", ""), prompts::RELECTURE_STYLE_RU);
+        assert_eq!(build_relecture_system_prompt("style", "en", ""), prompts::RELECTURE_STYLE_EN);
+        assert_eq!(build_relecture_system_prompt("style", "de", ""), prompts::RELECTURE_STYLE_EN);
+    }
+
+    #[test]
+    fn build_relecture_system_prompt_coherence_only_supports_fr_and_en() {
+        assert_eq!(build_relecture_system_prompt("coherence", "fr", ""), prompts::RELECTURE_COHERENCE_FR);
+        // Matches the Python original: es/ru aren't handled for coherence,
+        // they fall through to the English prompt.
+        assert_eq!(build_relecture_system_prompt("coherence", "es", ""), prompts::RELECTURE_COHERENCE_EN);
+        assert_eq!(build_relecture_system_prompt("coherence", "ru", ""), prompts::RELECTURE_COHERENCE_EN);
+    }
+
+    #[test]
+    fn build_relecture_system_prompt_worldbuilding_injects_lore_context() {
+        let prompt = build_relecture_system_prompt("worldbuilding", "fr", "Nom: Elara");
+        assert!(prompt.contains("Nom: Elara"));
+        assert!(prompt.contains("Réponds en français"));
+    }
+
+    #[test]
+    fn build_lore_coherence_prompt_substitutes_context_and_picks_language() {
+        let fr = build_lore_coherence_prompt("fr", "Nom: Elara");
+        assert!(fr.contains("Nom: Elara"));
+        assert!(fr.contains("Réponds en français"));
+
+        let en = build_lore_coherence_prompt("en", "Name: Elara");
+        assert!(en.contains("Name: Elara"));
+        assert!(en.contains("Respond in English"));
+
+        // Unknown language codes fall back to English, matching the rest
+        // of the AI prompt-building functions.
+        let unknown = build_lore_coherence_prompt("de", "x");
+        assert!(unknown.contains("x"));
+        assert!(unknown.contains("Respond in English"));
     }
 
     #[test]

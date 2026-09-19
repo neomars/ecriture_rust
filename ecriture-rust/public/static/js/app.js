@@ -658,6 +658,20 @@ window.showConfirm = function(message) {
             return val;
         }
 
+        // Shared defaults for ai_tool/ai_relecture/ai_chat invoke() calls:
+        // the user's configured creativity temperature, whether lore
+        // auto-injection is enabled, and the currently open scene (lore is
+        // only injected when one is open).
+        function aiRequestDefaults() {
+            return {
+                temperature: (projectData && projectData.settings && projectData.settings.ai_temperature !== undefined)
+                    ? projectData.settings.ai_temperature : 0.7,
+                scene_id: (activeNodeType === "scene") ? activeNodeId : null,
+                inject_lore_context: (projectData && projectData.settings && projectData.settings.inject_lore_context !== undefined)
+                    ? !!projectData.settings.inject_lore_context : true,
+            };
+        }
+
 
         // SAVE STATE BACK TO JSON FILE
         async function persistProject() {
@@ -3009,7 +3023,7 @@ function renderStatisticsDashboard() {
 
                 // Update version text
                 if (aboutText && data.current_version) {
-                    let text = getTranslation('about_text');
+                    let text = formatTranslation('about_text');
                     aboutText.innerHTML = text.replace('v1.0', 'v' + data.current_version);
                 }
 
@@ -3017,12 +3031,12 @@ function renderStatisticsDashboard() {
                     updateContainer.classList.remove('hidden');
                     updateContainer.classList.add('bg-blue-50', 'border-blue-200');
                     updateContainer.innerHTML = `
-                        <div class="font-bold text-blue-800 mb-2">🎉 ${getTranslation('update_available_title')} (v${data.latest_version})</div>
+                        <div class="font-bold text-blue-800 mb-2">🎉 ${formatTranslation('update_available_title')} (v${data.latest_version})</div>
                         <a href="${data.download_url}" target="_blank" class="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm transition-colors text-xs font-semibold mb-2 w-full">
-                            ⬇️ ${getTranslation('update_download_btn')}
+                            ⬇️ ${formatTranslation('update_download_btn')}
                         </a>
                         <a href="${data.release_page}" target="_blank" class="text-blue-600 hover:underline text-xs block">
-                            ${getTranslation('update_release_notes')}
+                            ${formatTranslation('update_release_notes')}
                         </a>
                     `;
                     // Show about modal automatically on startup if update is available
@@ -3031,7 +3045,7 @@ function renderStatisticsDashboard() {
                     updateContainer.classList.remove('hidden');
                     updateContainer.classList.add('bg-green-50', 'border-green-200');
                     updateContainer.innerHTML = `
-                        <div class="text-green-700 font-semibold text-sm">✅ ${getTranslation('update_up_to_date')}</div>
+                        <div class="text-green-700 font-semibold text-sm">✅ ${formatTranslation('update_up_to_date')}</div>
                     `;
                 }
             } catch (e) {
@@ -4217,3 +4231,1020 @@ function closeGemmaMissingModal() {
 function closeGemmaInstallingModal() {
     document.getElementById('gemma-installing-modal').classList.add('hidden');
 }
+
+
+// ============================================================
+// Merged from linguistique.js (formatting, synonyms, relecture).
+// See the top-of-file note in the git history for why this file
+// is one classic (non-module) script instead of three ES
+// modules: inline onclick="..." handlers and cross-file bare
+// references (projectData, translations, activeSelection, ...)
+// only resolve correctly when everything shares one global
+// script scope, which ES modules deliberately do not provide.
+// ============================================================
+
+        function applySmartTypography(editor) {
+            // No-op for contenteditable, handled via keydown handler to prevent cursor resetting
+        }
+
+        window.applySelectionFormatting = function applySelectionFormatting(type) {
+            const editor = document.getElementById('editor-content');
+            if (!editor) return;
+
+            editor.focus();
+
+            if (type === 'removeFormat') {
+                document.execCommand('removeFormat', false, null);
+            } else if (type === 'italic') {
+                document.execCommand('italic', false, null);
+            } else if (type === 'bold') {
+                document.execCommand('bold', false, null);
+            } else if (type === 'bold_italic') {
+                document.execCommand('bold', false, null);
+                document.execCommand('italic', false, null);
+            } else if (type === 'smallcaps') {
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    const selectedText = range.toString();
+                    if (selectedText.length > 0) {
+                        const span = document.createElement('span');
+                        span.style.fontVariant = 'small-caps';
+                        span.appendChild(document.createTextNode(selectedText));
+
+                        range.deleteContents();
+                        range.insertNode(span);
+
+                        // Select the span text
+                        const newRange = document.createRange();
+                        newRange.selectNodeContents(span);
+                        selection.removeAllRanges();
+                        selection.addRange(newRange);
+                    }
+                }
+            } else if (type === 'dialogue') {
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    const selectedText = range.toString().trim();
+                    if (selectedText.length > 0) {
+                        const dialogueNode = document.createTextNode(`— «\u00A0${selectedText}\u00A0»`);
+                        range.deleteContents();
+                        range.insertNode(dialogueNode);
+
+                        // Select the dialogue text
+                        const newRange = document.createRange();
+                        newRange.selectNodeContents(dialogueNode);
+                        selection.removeAllRanges();
+                        selection.addRange(newRange);
+                    }
+                }
+            } else if (type === 'annotation') {
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    const selectedText = range.toString();
+                    if (selectedText.length > 0) {
+                        const span = document.createElement('span');
+                        span.className = 'annotation-highlight border-b-2 border-dashed border-indigo-500 cursor-help relative inline';
+                        const defaultText = window.activeLang === 'fr' ? "Saisissez votre note d'annotation ici..." : "Enter your annotation note here...";
+                        span.setAttribute('data-annotation', defaultText);
+                        span.setAttribute('data-annotation-id', 'anno-' + Date.now() + '-' + Math.floor(Math.random() * 1000));
+
+                        // Use extractContents to preserve HTML elements like <br> and other formatting tags
+                        const extracted = range.extractContents();
+                        span.appendChild(extracted);
+
+                        range.insertNode(span);
+
+                        // Select the span text
+                        const newRange = document.createRange();
+                        newRange.selectNodeContents(span);
+                        selection.removeAllRanges();
+                        selection.addRange(newRange);
+                    }
+                }
+            }
+
+            // Trigger updates and persistence
+            onEditorInput('content', editor.innerHTML);
+
+            // Hide selection menu
+
+        }
+
+        window.toggleSynonymsDropdown = function toggleSynonymsDropdown(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('synonyms-dropdown-menu');
+            if (!menu) return;
+
+            const isHidden = menu.classList.contains('hidden');
+
+            // Hide rewrite dropdown if open
+            const rewriteMenu = document.getElementById('ai-rewrite-dropdown-menu');
+            if (rewriteMenu) rewriteMenu.classList.add('hidden');
+
+            if (isHidden) {
+                menu.classList.remove('hidden');
+                loadSynonymsForSelection();
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
+
+        async function loadSynonymsForSelection() {
+            const menu = document.getElementById('synonyms-dropdown-menu');
+            if (!menu) return;
+
+            const selectedText = activeSelection.text.trim();
+            if (!selectedText) {
+                menu.innerHTML = `<div class="text-[10px] text-slate-400 p-2 italic">${window.activeLang === 'fr' ? 'Sélectionner un mot' : 'Select a word'}</div>`;
+                return;
+            }
+
+            menu.innerHTML = `<div class="text-[10px] text-slate-400 p-2 italic">${window.activeLang === 'fr' ? 'Recherche...' : 'Searching...'}</div>`;
+
+            try {
+                {
+                    const synonyms = await window.api_invoke('get_synonyms', { word: selectedText, lang: window.activeLang }) || [];
+
+                    if (synonyms.length === 0) {
+                        menu.innerHTML = `<div class="text-[10px] text-slate-400 p-2 italic">${window.activeLang === 'fr' ? 'Aucun synonyme' : 'No synonyms found'}</div>`;
+                    } else {
+                        menu.innerHTML = synonyms.map(syn => `
+                            <button onclick="applySynonymReplacement('${escapeHtml(syn)}')" class="w-full text-left px-2.5 py-1.5 hover:bg-slate-700 text-slate-100 hover:text-white bg-transparent text-xs font-semibold rounded-md transition-colors block truncate">
+                                ${escapeHtml(syn)}
+                            </button>
+                        `).join('');
+                    }
+                }
+            } catch (err) {
+                console.error("Synonyms load error:", err);
+                menu.innerHTML = `<div class="text-[10px] text-red-400 p-2 italic">${window.activeLang === 'fr' ? 'Erreur connexion' : 'Network error'}</div>`;
+            }
+        }
+
+        window.applySynonymReplacement = function applySynonymReplacement(synonym) {
+            const editor = document.getElementById('editor-content');
+            if (!editor) return;
+
+            editor.focus();
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                range.deleteContents();
+
+                const node = document.createTextNode(synonym);
+                range.insertNode(node);
+
+                range.setStartAfter(node);
+                range.setEndAfter(node);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+
+            // Trigger updates and persistence
+            onEditorInput('content', editor.innerHTML);
+
+            // Close dropdown and menu
+
+
+            const synonymsMenu = document.getElementById('synonyms-dropdown-menu');
+            if (synonymsMenu) synonymsMenu.classList.add('hidden');
+        }
+
+
+        const STOPWORDS = {
+            fr: new Set(["dans", "pour", "avec", "mais", "dans", "elle", "elles", "vous", "nous", "leur", "leurs", "cette", "cettes", "ceux", "celles", "notre", "votre", "leurs", "donc", "alors", "plus", "moins", "très", "tout", "tous", "toute", "toutes", "sans", "comme", "mais", "puis", "quand", "si", "bien", "fait", "faire", "dire", "avoir", "être", "étiez", "était", "étaient", "sommes", "êtes", "sont", "suis", "es", "est", "avez", "avons", "ont", "avais", "avait", "avaient", "quel", "quelle", "quelles", "quels", "ceci", "cela", "celui", "celle", "ceux", "dont", "avec", "sans", "sous", "vers", "chez"]),
+            en: new Set(["with", "from", "they", "them", "their", "will", "would", "about", "there", "their", "these", "those", "this", "that", "then", "than", "thence", "when", "where", "what", "which", "while", "here", "have", "been", "were", "was", "is", "are", "am", "had", "has", "does", "done", "doing", "make", "made", "some", "more", "most", "many", "much", "very", "also", "just", "like", "even", "only", "well", "down", "under", "over", "into", "your", "them", "their", "theirs"])
+        };
+
+        function countWords(text) {
+            if (!text) return 0;
+            const clean = text.trim().replace(/[./,!?;:\"'()\[\]{}«»\-\—]/g, " ");
+            const words = clean.split(/\s+/).filter(w => w.length > 0);
+            return words.length;
+        }
+
+        function calculateLexicalRichness(text) {
+            if (!text) return 0;
+            const clean = text.trim().toLowerCase().replace(/[./,!?;:\"'()\[\]{}«»\-\—]/g, " ");
+            const words = clean.split(/\s+/).filter(w => w.length > 0);
+            if (words.length === 0) return 0;
+            const uniqueWords = new Set(words);
+            return Math.round((uniqueWords.size / words.length) * 100);
+        }
+
+        function countParagraphs(text) {
+            if (!text) return 0;
+            return text.split('\n').filter(p => p.trim().length > 0).length;
+        }
+
+        function calculateDialogueRatio(text) {
+            if (!text) return 0;
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            if (lines.length === 0) return 0;
+            let dialogueCount = 0;
+            lines.forEach(l => {
+                if (l.startsWith('-') || l.startsWith('—') || l.startsWith('«') || l.startsWith('"') || l.startsWith('“')) {
+                    dialogueCount++;
+                }
+            });
+            return Math.round((dialogueCount / lines.length) * 100);
+        }
+
+        function getSceneRepetitions(text, lang) {
+            if (!text) return [];
+            const clean = text.trim().toLowerCase().replace(/[./,!?;:\"'()\[\]{}«»\-\—\n\r]/g, " ");
+            const words = clean.split(/\s+/).filter(w => w.length > 3);
+            const counts = {};
+            const langKey = lang === "fr" ? "fr" : "en";
+            const stopset = STOPWORDS[langKey] || new Set();
+
+            words.forEach(w => {
+                if (!stopset.has(w)) {
+                    counts[w] = (counts[w] || 0) + 1;
+                }
+            });
+
+            const reps = [];
+            for (const [word, count] of Object.entries(counts)) {
+                if (count >= 2) {
+                    reps.push({ word, count });
+                }
+            }
+            // Sort by count descending
+            reps.sort((a, b) => b.count - a.count);
+            return reps;
+        }
+
+        async function selectRepetitionWord(word) {
+            const container = document.getElementById('relecture-repetition-synonyms-container');
+            const wordSpan = document.getElementById('relecture-selected-rep-word');
+            const listContainer = document.getElementById('relecture-rep-synonyms-list');
+
+            if (!container || !wordSpan || !listContainer) return;
+
+            wordSpan.innerText = word;
+            container.classList.remove('hidden');
+            listContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Recherche de synonymes... / Searching...</span>`;
+
+            try {
+                const synonyms = await window.api_invoke('get_synonyms', { word: word, lang: window.activeLang }) || [];
+
+                listContainer.innerHTML = "";
+
+                if (synonyms.length === 0) {
+                    listContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Aucun synonyme trouvé / No synonyms found</span>`;
+                } else {
+                    synonyms.forEach(syn => {
+                        const btn = document.createElement('button');
+                        btn.className = "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold px-2.5 py-1 rounded border border-indigo-200 transition-all mb-1 mr-1";
+                        btn.innerText = syn;
+                        btn.onclick = () => replaceRepetition(word, syn);
+                        listContainer.appendChild(btn);
+                    });
+                }
+            } catch (err) {
+                listContainer.innerHTML = `<span class="text-xs text-red-500">Erreur lors de la recherche / Error searching</span>`;
+            }
+        }
+
+        function replaceRepetition(oldWord, newWord) {
+            const escapedWord = oldWord.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            const regex = new RegExp("(?<=^|[^a-zA-Z0-9àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ])" + escapedWord + "(?=$|[^a-zA-Z0-9àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ])", "gi");
+
+            if (activeRelectureScope === "scene") {
+                if (!activeNodeId || activeNodeType !== "scene") return;
+                const editor = document.getElementById('editor-content');
+                if (!editor) return;
+
+                let content = editor.innerHTML;
+                content = content.replace(regex, newWord);
+                editor.innerHTML = content;
+                onCombinedEditorInput(editor.innerHTML);
+            } else {
+                // Replace in all scenes of the parent chapter
+                const chapter = findParentChapter(activeNodeId);
+                if (chapter && chapter.children) {
+                    chapter.children.forEach(scene => {
+                        if (scene.content) {
+                            scene.content = scene.content.replace(regex, newWord);
+                        }
+                    });
+                    refreshActiveWorkspace();
+                    persistProject();
+                }
+            }
+
+            // Hide synonym box and refresh stats and panes
+            document.getElementById('relecture-repetition-synonyms-container').classList.add('hidden');
+            updateRelectureStatsAndPanes();
+        }
+
+        function updatePacingStats(text) {
+            const shortEl = document.getElementById('relecture-pacing-short');
+            const mediumEl = document.getElementById('relecture-pacing-medium');
+            const longEl = document.getElementById('relecture-pacing-long');
+            if (!shortEl || !mediumEl || !longEl) return;
+
+            if (!text) {
+                shortEl.innerText = "0";
+                mediumEl.innerText = "0";
+                longEl.innerText = "0";
+                return;
+            }
+
+            const sentences = text.split(/[.?!]+/).map(s => s.trim()).filter(s => s.length > 0);
+            let shortCount = 0;
+            let mediumCount = 0;
+            let longCount = 0;
+
+            sentences.forEach(s => {
+                const words = s.split(/\s+/).filter(w => w.length > 0).length;
+                if (words < 10) {
+                    shortCount++;
+                } else if (words <= 25) {
+                    mediumCount++;
+                } else {
+                    longCount++;
+                }
+            });
+
+            shortEl.innerText = shortCount;
+            mediumEl.innerText = mediumCount;
+            longEl.innerText = longCount;
+        }
+
+        function selectRelectureCategory(cat) {
+            const isAiEnabled = (localStorage.getItem('ai-enabled') !== 'false');
+            if (!isAiEnabled && (cat === 'style' || cat === 'coherence' || cat === 'worldbuilding')) {
+                return;
+            }
+
+            activeRelectureCategory = cat;
+
+            // Highlight active button
+            const buttons = ["repetitions", "rythme", "style", "coherence", "worldbuilding"];
+            buttons.forEach(b => {
+                const btn = document.getElementById(`relecture-btn-${b}`);
+                if (btn) {
+                    if (b === cat) {
+                        btn.className = "w-full text-left px-3 py-2 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-all flex items-center space-x-2";
+                    } else {
+                        btn.className = "w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-all flex items-center space-x-2";
+                    }
+                }
+            });
+
+            // Show/hide panes
+            const repetitionsPane = document.getElementById('relecture-pane-repetitions');
+            const rythmePane = document.getElementById('relecture-pane-rythme');
+            const aiPane = document.getElementById('relecture-pane-ai');
+
+            if (cat === "repetitions") {
+                repetitionsPane.classList.remove('hidden');
+                rythmePane.classList.add('hidden');
+                aiPane.classList.add('hidden');
+            } else if (cat === "rythme") {
+                repetitionsPane.classList.add('hidden');
+                rythmePane.classList.remove('hidden');
+                aiPane.classList.add('hidden');
+            } else {
+                repetitionsPane.classList.add('hidden');
+                rythmePane.classList.add('hidden');
+                aiPane.classList.remove('hidden');
+
+                // Update AI Title based on selected AI category
+                const titleEl = document.getElementById('relecture-ai-title');
+                if (titleEl) {
+                    if (cat === "style") titleEl.innerText = "Style & Prose (IA)";
+                    else if (cat === "coherence") titleEl.innerText = "Cohérence (IA)";
+                    else if (cat === "worldbuilding") titleEl.innerText = "Worldbuilding & Lore (IA)";
+                }
+
+                const feedbackEl = document.getElementById('relecture-ai-feedback');
+                if (feedbackEl) {
+                    if (cat === "style") {
+                        feedbackEl.innerText = window.activeLang === 'fr' ? "Pour lancer l'analyse intelligente de style et prose, cliquez sur le bouton ci-dessus." : "To run the style and prose smart analysis, click the button above.";
+                    } else if (cat === "coherence") {
+                        feedbackEl.innerText = window.activeLang === 'fr' ? "Pour lancer l'analyse intelligente de cohérence narrative, cliquez sur le bouton ci-dessus." : "To run the narrative coherence smart analysis, click the button above.";
+                    } else if (cat === "worldbuilding") {
+                        feedbackEl.innerText = window.activeLang === 'fr' ? "Pour lancer l'analyse intelligente de worldbuilding (anachronismes et incohérences de lore), cliquez sur le bouton ci-dessus." : "To run the smart worldbuilding analysis (anachronisms and lore inconsistencies), click the button above.";
+                    }
+                }
+            }
+        }
+
+        function autoCorrectTypography() {
+            const correctText = (txt) => {
+                if (window.activeLang === 'fr') {
+                    txt = txt.replace(/([^ \u00A0])([?!:;])/g, '$1 $2');
+                    txt = txt.replace(/"([^"]+)"/g, '« $1 »');
+                    txt = txt.replace(/\.\.\./g, '…');
+                } else {
+                    txt = txt.replace(/"([^"]+)"/g, '“$1”');
+                    txt = txt.replace(/'([^']+)'/g, '‘$1’');
+                    txt = txt.replace(/\.\.\./g, '…');
+                }
+                return txt;
+            };
+
+            if (activeRelectureScope === "scene") {
+                if (!activeNodeId || activeNodeType !== "scene") return;
+                const editor = document.getElementById('editor-content');
+                if (!editor) return;
+
+                // Walk only text nodes to avoid corrupting HTML tags and attributes
+                const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null, false);
+                let node;
+                const nodesToCorrect = [];
+                while (node = walker.nextNode()) {
+                    nodesToCorrect.push(node);
+                }
+                nodesToCorrect.forEach(textNode => {
+                    textNode.nodeValue = correctText(textNode.nodeValue);
+                });
+
+                onCombinedEditorInput(editor.innerHTML);
+            } else {
+                const chapter = findParentChapter(activeNodeId);
+                if (chapter && chapter.children) {
+                    chapter.children.forEach(scene => {
+                        if (scene.content) {
+                            scene.content = correctText(scene.content);
+                        }
+                    });
+                    refreshActiveWorkspace();
+                    persistProject();
+                }
+            }
+
+            updateRelectureStatsAndPanes();
+        }
+
+        function updateRelectureStatsAndPanes() {
+            let text = "";
+            if (activeRelectureScope === "scene") {
+                const editor = document.getElementById('editor-content');
+                text = editor ? editor.innerText : "";
+            } else {
+                text = getChapterText();
+            }
+
+            const wordCount = countWords(text);
+            const richness = calculateLexicalRichness(text);
+            const paraCount = countParagraphs(text);
+            const dialogue = calculateDialogueRatio(text);
+
+            document.getElementById('relecture-stat-words').innerText = wordCount;
+            document.getElementById('relecture-stat-richness').innerText = richness + "%";
+            document.getElementById('relecture-stat-paragraphs').innerText = paraCount;
+            document.getElementById('relecture-stat-dialogue').innerText = dialogue + "%";
+
+            const reps = getSceneRepetitions(text, window.activeLang);
+            const repsListContainer = document.getElementById('relecture-repetitions-list');
+            if (repsListContainer) {
+                repsListContainer.innerHTML = "";
+                if (reps.length === 0) {
+                    repsListContainer.innerHTML = `<span class="text-xs text-slate-400 italic">Aucune répétition détectée / No repetitions detected</span>`;
+                } else {
+                    reps.forEach(item => {
+                        const btn = document.createElement('button');
+                        btn.className = "bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold px-2 py-1 rounded border border-rose-200 transition-all flex items-center space-x-1 mb-1 mr-1";
+                        btn.innerHTML = `<span>${item.word}</span> <span class="bg-rose-200/60 px-1 rounded text-[10px]">${item.count}</span>`;
+                        btn.onclick = () => selectRepetitionWord(item.word);
+                        repsListContainer.appendChild(btn);
+                    });
+                }
+            }
+
+            updatePacingStats(text);
+        }
+
+
+// ============================================================
+// Merged from ia.js (contextual AI tools, chat, relecture AI,
+// character extraction, local Gemma install flow).
+// ============================================================
+        // CONTEXTUAL AI TOOLS (Describe, Rewrite, Expand)
+        let activeSelection = { start: 0, end: 0, text: "" };
+        let lastAiToolCall = { tool: "", style: "", text: "" };
+
+                window.handleTextSelection = function handleTextSelection(e) {
+            const editor = document.getElementById('editor-content');
+            if (!editor) return;
+
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+                const text = selection.toString().trim();
+                if (text.length > 0) {
+                    activeSelection = { text: selection.toString() };
+                }
+            }
+        }
+
+
+
+        function closeAiPreview() {
+            document.getElementById('ai-preview-card').classList.add('hidden');
+        }
+        window.closeAiPreview = closeAiPreview;
+
+        window.toggleRewriteDropdown = function toggleRewriteDropdown(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('ai-rewrite-dropdown-menu');
+            if (menu) {
+                menu.classList.toggle('hidden');
+            }
+        }
+        window.triggerContextAI = async function triggerContextAI(tool, style = "") {
+                        const rewriteMenu = document.getElementById('ai-rewrite-dropdown-menu');
+            const povMenu = document.getElementById('ai-pov-dropdown-menu');
+            const card = document.getElementById('ai-preview-card');
+                        if (rewriteMenu) rewriteMenu.classList.add('hidden');
+            if (povMenu) povMenu.classList.add('hidden');
+            if (!card) return;
+
+            // Save last call params
+            lastAiToolCall = { tool, style, text: activeSelection.text };
+
+            // Position card near selection menu
+            card.style.left = '50%';
+            card.style.top = '50%';
+            card.style.transform = 'translate(-50%, -50%)';
+
+            card.classList.remove('hidden');
+
+            // Setup loading state
+            document.getElementById('ai-preview-loading').classList.remove('hidden');
+            document.getElementById('ai-preview-result-container').classList.add('hidden');
+            document.getElementById('ai-preview-actions').classList.add('hidden');
+
+            // Set Title
+            let titleText = "Assistant IA";
+            if (tool === "describe") {
+                titleText = formatTranslation("ai_describe") || "Décrire";
+            } else if (tool === "rewrite") {
+                const styleName = style.charAt(0).toUpperCase() + style.slice(1);
+                titleText = `${formatTranslation("ai_rewrite") || "Réécrire"} (${styleName})`;
+            } else if (tool === "pov") {
+                let povName = style;
+                if (style === "first_person") povName = "1ère p.";
+                if (style === "third_person") povName = "3ème p.";
+                if (style === "other_witness") povName = "Témoin";
+                titleText = `POV (${povName})`;
+            } else if (tool === "expand") {
+                titleText = formatTranslation("ai_expand") || "Développer";
+            } else if (tool === "show_dont_tell") {
+                titleText = formatTranslation("ai_show_dont_tell") || "Show, Don't Tell";
+            } else if (tool === "sensory") {
+                titleText = formatTranslation("ai_sensory") || "Détails Sensoriels";
+            }
+            document.getElementById('ai-preview-tool-title').innerText = titleText;
+
+            try {
+                const data = await window.api_invoke('ai_tool', {
+                    tool: tool,
+                    style: style,
+                    text: activeSelection.text,
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
+                });
+
+                document.getElementById('ai-preview-loading').classList.add('hidden');
+
+                {
+                    const resultContainer = document.getElementById('ai-preview-result-container');
+                    resultContainer.innerText = data.message;
+                    resultContainer.classList.remove('hidden');
+                    document.getElementById('ai-preview-actions').classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error("AI Context error:", err);
+                document.getElementById('ai-preview-loading').classList.add('hidden');
+                alert("Failed to connect to AI service.");
+                closeAiPreview();
+            }
+        }
+
+        function regenerateAI() {
+            if (lastAiToolCall.text) {
+                triggerContextAI(lastAiToolCall.tool, lastAiToolCall.style);
+            }
+        }
+        window.regenerateAI = regenerateAI;
+
+        window.applyAiSuggestion = function applyAiSuggestion() {
+            const editor = document.getElementById('editor-content');
+            const resultContainer = document.getElementById('ai-preview-result-container');
+            if (!editor || !resultContainer) return;
+
+            editor.focus();
+            const suggestion = resultContainer.innerText;
+
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                range.deleteContents();
+
+                // Escape and convert newlines to <br> to preserve formatting in suggestions
+                const tempDiv = document.createElement('div');
+                tempDiv.innerText = suggestion;
+                const formattedHtml = tempDiv.innerHTML.replace(/\n/g, '<br>');
+
+                const fragment = range.createContextualFragment(formattedHtml);
+                const lastNode = fragment.lastChild;
+                range.insertNode(fragment);
+
+                if (lastNode) {
+                    range.setStartAfter(lastNode);
+                    range.setEndAfter(lastNode);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
+            }
+
+            // Trigger updates and persistence
+            onEditorInput('content', editor.innerHTML);
+            closeAiPreview();
+        }
+
+        async function runAiRelecture() {
+            const feedbackEl = document.getElementById('relecture-ai-feedback');
+            if (!feedbackEl) return;
+
+            let text = "";
+            if (activeRelectureScope === "scene") {
+                const editor = document.getElementById('editor-content');
+                text = editor ? editor.innerText : "";
+            } else {
+                text = getChapterText();
+            }
+
+            if (!text || !text.trim()) {
+                feedbackEl.innerText = translations["error_empty_text_analysis"] || "Empty or missing text to analyze.";
+                return;
+            }
+
+            feedbackEl.innerText = translations["ai_analysis_in_progress"] || "AI analysis in progress... Please wait.";
+
+            try {
+                let loreContext = "";
+                if (activeRelectureCategory === "worldbuilding") {
+                    loreContext = projectData.characters.map(c =>
+                        `Nom: ${c.name}\nApparence: ${c.appearance || ''}\nTraits: ${(c.traits || []).join(', ')}\nNotes: ${c.notes || ''}\n`
+                    ).join('\n');
+                }
+
+                try {
+                    const data = await window.api_invoke('ai_relecture', {
+                        category: activeRelectureCategory, // "style", "coherence" or "worldbuilding"
+                        text: text,
+                        lang: window.activeLang,
+                        temperature: aiRequestDefaults().temperature,
+                        lore_context: loreContext
+                    });
+                    feedbackEl.innerText = data.feedback;
+                } catch (aiErr) {
+                    feedbackEl.innerText = translations["error_ai_feedback"] || "Error: Could not retrieve feedback from AI.";
+                }
+            } catch (err) {
+                feedbackEl.innerText = translations["error_network_connection"] || "Network connection error.";
+            }
+        }
+
+        // AI Chat history state
+        let chatMessages = [];
+
+        function updateChatWelcomeMessage() {
+            const welcomeText = translations["chat_welcome"] || "Bonjour ! Je suis votre assistant Écriture. Posez-moi des questions sur vos personnages, l'intrigue ou demandez-moi des idées pour votre scène en cours.";
+            if (chatMessages.length === 0) {
+                chatMessages.push({ role: "assistant", content: welcomeText });
+            } else if (chatMessages.length === 1 && chatMessages[0].role === "assistant") {
+                chatMessages[0].content = welcomeText;
+            }
+            renderChat();
+        }
+
+        function clearChat() {
+            const welcomeText = translations["chat_welcome"] || "Bonjour ! Je suis votre assistant Écriture. Posez-moi des questions sur vos personnages, l'intrigue ou demandez-moi des idées pour votre scène en cours.";
+            chatMessages = [
+                { role: "assistant", content: welcomeText }
+            ];
+            renderChat();
+        }
+
+        function renderChat() {
+            const container = document.getElementById('chat-messages');
+            if (!container) return;
+            container.innerHTML = "";
+
+            chatMessages.forEach(msg => {
+                const bubble = document.createElement('div');
+                if (msg.role === "user") {
+                    bubble.className = "bg-indigo-50 text-indigo-950 p-2.5 rounded-lg border border-indigo-100 ml-6 self-end shadow-2xs max-w-[85%]";
+                } else {
+                    bubble.className = "bg-slate-50 text-slate-800 p-2.5 rounded-lg border border-slate-100 mr-6 self-start shadow-2xs max-w-[85%] whitespace-pre-line";
+                }
+                bubble.innerText = msg.content;
+                container.appendChild(bubble);
+            });
+
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const content = input.value.trim();
+            if (!content) return;
+
+            input.value = "";
+
+            chatMessages.push({ role: "user", content });
+            renderChat();
+
+            const loadingIndex = chatMessages.length;
+            chatMessages.push({ role: "assistant", content: "..." });
+            renderChat();
+
+            try {
+                const data = await window.api_invoke('ai_chat', {
+                    messages: chatMessages.slice(0, loadingIndex),
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
+                });
+                chatMessages[loadingIndex] = { role: "assistant", content: data.message };
+            } catch (err) {
+                chatMessages[loadingIndex] = { role: "assistant", content: translations["error_network_connection"] || "Error: Network connection failed." };
+            }
+
+            renderChat();
+        }
+
+        // LORE EXTRACTION
+        async function extractLoreFromScene() {
+            const editor = document.getElementById('editor-content');
+            const text = editor ? editor.innerText : "";
+            if (!text || !text.trim()) {
+                alert(translations["text_is_empty"] || "Text is empty.");
+                return;
+            }
+
+            const btn = document.querySelector('button[onclick="extractLoreFromScene()"]');
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = `⏳ ${translations["analyzing"] || "Analyzing and generating..."}`;
+            btn.disabled = true;
+
+            try {
+                {
+                    const data = await window.api_invoke('ai_extract_characters', { text: text, lang: window.activeLang });
+                    if (data.status === "success" && data.characters && data.characters.length > 0) {
+                        let newChars = 0;
+                        data.characters.forEach(extractedChar => {
+                            // Check if char exists
+                            let exists = projectData.characters.find(c =>
+                                c.name.toLowerCase() === extractedChar.name.toLowerCase() ||
+                                (c.aliases && c.aliases.map(a => a.toLowerCase()).includes(extractedChar.name.toLowerCase()))
+                            );
+
+                            if (!exists) {
+                                const newChar = {
+                                    id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                                    name: extractedChar.name,
+                                    type: "personnage",
+                                    description: extractedChar.notes || "",
+                                    role: "",
+                                    aliases: [],
+                                    traits: extractedChar.traits || [],
+                                    appearance: extractedChar.appearance || "",
+                                    relations: [],
+                                    linked_scenes: [],
+                                    notes: extractedChar.notes || ""
+                                };
+                                projectData.characters.push(newChar);
+                                newChars++;
+                            } else {
+                                // Update existing char conditionally
+                                if (!exists.appearance && extractedChar.appearance) exists.appearance = extractedChar.appearance;
+                                if (extractedChar.traits) {
+                                    extractedChar.traits.forEach(t => {
+                                        if (!exists.traits.includes(t)) exists.traits.push(t);
+                                    });
+                                }
+                            }
+                        });
+
+                        triggerAutoSave();
+                        renderTree();
+                        alert(formatTranslation("chars_extracted_success", { count: newChars }) || `${newChars} character(s) extracted and added successfully!`);
+                    } else {
+                        alert(translations["no_characters_detected"] || "No characters detected.");
+                    }
+                }
+            } catch (err) {
+                alert(translations["network_error"] || "Network error.");
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }
+        }
+        window.extractLoreFromScene = extractLoreFromScene;
+
+        // CHARACTER INTERVIEW
+        let interviewCharId = null;
+        let interviewMessages = [];
+
+        function openInterviewModal(charId) {
+            const char = projectData.characters.find(c => c.id === charId);
+            if (!char) return;
+
+            interviewCharId = charId;
+            interviewMessages = [];
+
+            document.getElementById('interview-character-name').innerText = char.name;
+
+            // Initial system prompt to set personality
+            const sysPrompt = `Tu dois incarner le personnage suivant et répondre exactement comme lui. Ne sors JAMAIS de ton personnage.\n` +
+                `Nom: ${char.name}\n` +
+                `Apparence: ${char.appearance}\n` +
+                `Traits: ${char.traits.join(', ')}\n` +
+                `Notes: ${char.notes}\n` +
+                `Description: ${char.description}\n`;
+
+            interviewMessages.push({ role: "system", content: sysPrompt });
+
+            const firstMsg = window.activeLang === 'fr' ?
+                `*Vous vous asseyez en face de ${char.name}.* Bonjour, pouvons-nous discuter ?` :
+                `*You sit across from ${char.name}.* Hello, can we talk?`;
+
+            interviewMessages.push({ role: "user", content: firstMsg });
+
+            document.getElementById('interview-modal').classList.remove('hidden');
+            document.getElementById('interview-chat-messages').innerHTML = "";
+            document.getElementById('interview-chat-input').value = "";
+
+            // Trigger first AI response
+            _sendInterviewRequest();
+        }
+        window.openInterviewModal = openInterviewModal;
+
+        function closeInterviewModal() {
+            document.getElementById('interview-modal').classList.add('hidden');
+            interviewCharId = null;
+            interviewMessages = [];
+        }
+        window.closeInterviewModal = closeInterviewModal;
+
+        function renderInterviewChat() {
+            const container = document.getElementById('interview-chat-messages');
+            container.innerHTML = "";
+
+            interviewMessages.forEach(msg => {
+                if (msg.role === "system") return; // hide system prompts
+
+                const div = document.createElement('div');
+                if (msg.role === "user") {
+                    div.className = "bg-indigo-600 text-white p-2.5 rounded-lg border border-indigo-700 self-end ml-6 shadow-2xs";
+                    div.innerText = msg.content;
+                } else if (msg.role === "assistant") {
+                    div.className = "bg-white text-slate-700 p-2.5 rounded-lg border border-slate-200 self-start mr-6 shadow-2xs";
+                    div.innerText = msg.content;
+                }
+                container.appendChild(div);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function _sendInterviewRequest() {
+            renderInterviewChat();
+
+            // Add loading
+            const loadingIdx = interviewMessages.length;
+            interviewMessages.push({ role: "assistant", content: "..." });
+            renderInterviewChat();
+
+            try {
+                const data = await window.api_invoke('ai_chat', {
+                    messages: interviewMessages.slice(0, loadingIdx),
+                    lang: window.activeLang,
+                    temperature: aiRequestDefaults().temperature,
+                    inject_lore_context: false // the character's lore is already in the system prompt built above
+                });
+                interviewMessages[loadingIdx].content = data.message;
+            } catch (e) {
+                interviewMessages[loadingIdx].content = "Error.";
+            }
+            renderInterviewChat();
+        }
+
+        function sendInterviewMessage() {
+            const input = document.getElementById('interview-chat-input');
+            const content = input.value.trim();
+            if (!content) return;
+
+            input.value = "";
+            interviewMessages.push({ role: "user", content: content });
+
+            _sendInterviewRequest();
+        }
+        window.sendInterviewMessage = sendInterviewMessage;
+
+
+
+        // POV DROPDOWN
+        function togglePovDropdown(event) {
+            event.stopPropagation();
+            const menu = document.getElementById('ai-pov-dropdown-menu');
+            if (menu) {
+                menu.classList.toggle('hidden');
+            }
+        }
+        window.togglePovDropdown = togglePovDropdown;
+
+        // BRAINSTORM MODAL
+        function openBrainstormModal() {
+            document.getElementById('brainstorm-modal').classList.remove('hidden');
+            selectBrainstormTab('complications');
+        }
+        window.openBrainstormModal = openBrainstormModal;
+
+        function closeBrainstormModal() {
+            document.getElementById('brainstorm-modal').classList.add('hidden');
+            document.getElementById('complications-result').classList.add('hidden');
+            document.getElementById('names-result').classList.add('hidden');
+        }
+        window.closeBrainstormModal = closeBrainstormModal;
+
+        function selectBrainstormTab(tab) {
+            document.getElementById('brainstorm-pane-complications').classList.add('hidden');
+            document.getElementById('brainstorm-pane-names').classList.add('hidden');
+
+            document.getElementById('tab-brainstorm-complications').className = "flex-1 py-1.5 rounded-md font-semibold transition-all text-slate-500 hover:text-slate-800";
+            document.getElementById('tab-brainstorm-names').className = "flex-1 py-1.5 rounded-md font-semibold transition-all text-slate-500 hover:text-slate-800";
+
+            if (tab === 'complications') {
+                document.getElementById('brainstorm-pane-complications').classList.remove('hidden');
+                document.getElementById('tab-brainstorm-complications').className = "flex-1 py-1.5 rounded-md font-semibold transition-all bg-white text-slate-800 shadow-xs";
+            } else {
+                document.getElementById('brainstorm-pane-names').classList.remove('hidden');
+                document.getElementById('tab-brainstorm-names').className = "flex-1 py-1.5 rounded-md font-semibold transition-all bg-white text-slate-800 shadow-xs";
+            }
+        }
+        window.selectBrainstormTab = selectBrainstormTab;
+
+        async function generateComplications() {
+            const editor = document.getElementById('editor-content');
+            const text = editor ? editor.innerText.trim() : "";
+
+            if (!text) {
+                alert(formatTranslation("error_empty_scene") || "The current scene is empty. Add text to generate complications.");
+                return;
+            }
+
+            const resultContainer = document.getElementById('complications-result');
+            resultContainer.innerText = `⏳ ${translations["analyzing"] || "Analyzing and generating..."}`;
+            resultContainer.classList.remove('hidden');
+
+            try {
+                const data = await window.api_invoke('ai_tool', {
+                    tool: 'complications',
+                    style: '',
+                    text: text,
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
+                });
+                resultContainer.innerText = data.message;
+            } catch (err) {
+                console.error("AI Complications error:", err);
+                resultContainer.innerText = translations["error_ai_service_connect"] || "Error: Failed to connect to AI service.";
+            }
+        }
+        window.generateComplications = generateComplications;
+
+        async function generateNames() {
+            const styleInput = document.getElementById('names-style-input').value.trim();
+            if (!styleInput) {
+                alert(translations["enter_style_alert"] || "Please enter a style or linguistic roots.");
+                return;
+            }
+
+            const resultContainer = document.getElementById('names-result');
+            resultContainer.innerText = `⏳ ${translations["generating"] || "Generating..."}`;
+            resultContainer.classList.remove('hidden');
+
+            try {
+                const data = await window.api_invoke('ai_tool', {
+                    tool: 'names',
+                    style: styleInput,
+                    text: "", // Text is not needed for names generation
+                    lang: window.activeLang,
+                    ...aiRequestDefaults()
+                });
+                resultContainer.innerText = data.message;
+            } catch (err) {
+                console.error("AI Names error:", err);
+                resultContainer.innerText = translations["error_ai_service_connect"] || "Error: Failed to connect to AI service.";
+            }
+        }
+        window.generateNames = generateNames;
