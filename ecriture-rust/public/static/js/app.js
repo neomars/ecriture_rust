@@ -4739,7 +4739,16 @@ function closeGemmaInstallingModal() {
             if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
                 const text = selection.toString().trim();
                 if (text.length > 0) {
-                    activeSelection = { text: selection.toString() };
+                    // Clone the Range now, while the selection is still live in
+                    // the editor: by the time the user clicks a toolbar button
+                    // and then "Appliquer" in the AI preview card, focus has
+                    // moved through those elements and window.getSelection()
+                    // no longer points at the originally selected text - it may
+                    // be collapsed at the editor's start, or sit inside the
+                    // preview card instead. Keeping our own clone lets us
+                    // restore exactly the right spot to apply the suggestion to,
+                    // regardless of what the live selection has become by then.
+                    activeSelection = { text: selection.toString(), range: selection.getRangeAt(0).cloneRange() };
                 }
             }
         }
@@ -4843,26 +4852,48 @@ function closeGemmaInstallingModal() {
             editor.focus();
             const suggestion = resultContainer.innerText;
 
-            const selection = window.getSelection();
-            if (selection.rangeCount > 0) {
-                const range = selection.getRangeAt(0);
-                range.deleteContents();
-
-                // Escape and convert newlines to <br> to preserve formatting in suggestions
-                const tempDiv = document.createElement('div');
-                tempDiv.innerText = suggestion;
-                const formattedHtml = tempDiv.innerHTML.replace(/\n/g, '<br>');
-
-                const fragment = range.createContextualFragment(formattedHtml);
-                const lastNode = fragment.lastChild;
-                range.insertNode(fragment);
-
-                if (lastNode) {
-                    range.setStartAfter(lastNode);
-                    range.setEndAfter(lastNode);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
+            // Use the Range captured back when the text was actually selected
+            // (see handleTextSelection) rather than window.getSelection() as
+            // it stands right now: clicking through the toolbar and then the
+            // "Appliquer" button has since moved focus away from the editor,
+            // so the live selection no longer points at the originally
+            // selected text - applying against it silently inserted the
+            // suggestion wherever the ambient selection happened to end up
+            // instead of replacing the highlighted passage.
+            let range = activeSelection.range;
+            const rangeIsUsable = range && editor.contains(range.startContainer) && editor.contains(range.endContainer);
+            if (!rangeIsUsable) {
+                // Editor content changed since the selection was made (or
+                // there never was one) - fall back to the current selection
+                // if it's still inside the editor, otherwise append at the end
+                // rather than silently dropping the suggestion.
+                const liveSelection = window.getSelection();
+                if (liveSelection && liveSelection.rangeCount > 0 && editor.contains(liveSelection.getRangeAt(0).startContainer)) {
+                    range = liveSelection.getRangeAt(0);
+                } else {
+                    range = document.createRange();
+                    range.selectNodeContents(editor);
+                    range.collapse(false);
                 }
+            }
+
+            range.deleteContents();
+
+            // Escape and convert newlines to <br> to preserve formatting in suggestions
+            const tempDiv = document.createElement('div');
+            tempDiv.innerText = suggestion;
+            const formattedHtml = tempDiv.innerHTML.replace(/\n/g, '<br>');
+
+            const fragment = range.createContextualFragment(formattedHtml);
+            const lastNode = fragment.lastChild;
+            range.insertNode(fragment);
+
+            if (lastNode) {
+                range.setStartAfter(lastNode);
+                range.setEndAfter(lastNode);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
             }
 
             // Trigger updates and persistence
@@ -4887,7 +4918,7 @@ function closeGemmaInstallingModal() {
                 return;
             }
 
-            feedbackEl.innerText = translations["ai_analysis_in_progress"] || "AI analysis in progress... Please wait.";
+            feedbackEl.innerHTML = `<span class="ai-hourglass inline-block">⏳</span> ${translations["ai_analysis_in_progress"] || "AI analysis in progress... Please wait."}`;
 
             try {
                 let loreContext = "";
@@ -4947,7 +4978,11 @@ function closeGemmaInstallingModal() {
                 } else {
                     bubble.className = "bg-slate-50 text-slate-800 p-2.5 rounded-lg border border-slate-100 mr-6 self-start shadow-2xs max-w-[85%] whitespace-pre-line";
                 }
-                bubble.innerText = msg.content;
+                if (msg.loading) {
+                    bubble.innerHTML = '<span class="ai-hourglass inline-block">⏳</span>';
+                } else {
+                    bubble.innerText = msg.content;
+                }
                 container.appendChild(bubble);
             });
 
@@ -4965,7 +5000,7 @@ function closeGemmaInstallingModal() {
             renderChat();
 
             const loadingIndex = chatMessages.length;
-            chatMessages.push({ role: "assistant", content: "..." });
+            chatMessages.push({ role: "assistant", content: "...", loading: true });
             renderChat();
 
             try {
@@ -4993,7 +5028,7 @@ function closeGemmaInstallingModal() {
 
             const btn = document.querySelector('button[onclick="extractLoreFromScene()"]');
             const originalContent = btn.innerHTML;
-            btn.innerHTML = `⏳ ${translations["analyzing"] || "Analyzing and generating..."}`;
+            btn.innerHTML = `<span class="ai-hourglass inline-block">⏳</span> ${translations["analyzing"] || "Analyzing and generating..."}`;
             btn.disabled = true;
 
             try {
@@ -5109,7 +5144,11 @@ function closeGemmaInstallingModal() {
                     div.innerText = msg.content;
                 } else if (msg.role === "assistant") {
                     div.className = "bg-white text-slate-700 p-2.5 rounded-lg border border-slate-200 self-start mr-6 shadow-2xs";
-                    div.innerText = msg.content;
+                    if (msg.loading) {
+                        div.innerHTML = '<span class="ai-hourglass inline-block">⏳</span>';
+                    } else {
+                        div.innerText = msg.content;
+                    }
                 }
                 container.appendChild(div);
             });
@@ -5121,7 +5160,7 @@ function closeGemmaInstallingModal() {
 
             // Add loading
             const loadingIdx = interviewMessages.length;
-            interviewMessages.push({ role: "assistant", content: "..." });
+            interviewMessages.push({ role: "assistant", content: "...", loading: true });
             renderInterviewChat();
 
             try {
@@ -5131,9 +5170,9 @@ function closeGemmaInstallingModal() {
                     temperature: aiRequestDefaults().temperature,
                     inject_lore_context: false // the character's lore is already in the system prompt built above
                 });
-                interviewMessages[loadingIdx].content = data.message;
+                interviewMessages[loadingIdx] = { role: "assistant", content: data.message };
             } catch (e) {
-                interviewMessages[loadingIdx].content = "Error.";
+                interviewMessages[loadingIdx] = { role: "assistant", content: "Error." };
             }
             renderInterviewChat();
         }
