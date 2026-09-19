@@ -75,4 +75,36 @@ The `ecriture-rust` project is built with:
 
 The data model uses a JSON file format to store the entire novel (settings, manuscript, plot, characters, notes).
 
+## Backend Migration Status
+
+The Rust backend lives in two crates under `ecriture-rust/`:
+
+- **`ecriture-core`** — framework-agnostic business logic (no Tauri
+  dependency), fully covered by unit and integration tests:
+  project persistence and manuscript tree editing, export to
+  txt/docx/pdf/odt/epub/mobi, French synonym lookup (bundled `lexique.db`),
+  local JSON backups, locale strings, AI prompt templates + offline
+  fallback responses, and update-check version comparison.
+- **`src-tauri`** — thin `#[tauri::command]` adapters over `ecriture-core`,
+  exposed to the frontend via `window.__TAURI__`.
+
+Run `cargo test` inside `ecriture-rust/ecriture-core` to run the full
+regression/quality/feature-verification suite (60+ tests, including a
+non-regression test against the real `lexique.db`). Run `cargo clippy` in
+either crate for lint/quality checks.
+
+**Known gaps vs. the original Python app** (tracked as future work, not
+silently faked):
+- No local LLM inference is bundled. Contextual AI tools (describe,
+  rewrite, expand, relecture, chat) return the same offline "simulated"
+  fallback text the Python app shows when its local model isn't installed.
+  A real backend can be plugged in behind `ecriture_core::ai::AiBackend`.
+- Synonym lookup only has real data for French. The Python app additionally
+  used NLTK WordNet + spaCy for English/Spanish/Russian; there is no
+  equivalent pure-Rust crate, so those languages currently return an empty
+  list rather than pretending to work.
+- Native OS integrations that need extra Tauri plugins (folder picker for
+  backups, document import from `.docx`/`.odt`/`.epub`, streaming AI chat,
+  live auto-update download) are not wired up yet.
+
 > *Note: For the French version of this README, please see [README-fr.md](README-fr.md).*
