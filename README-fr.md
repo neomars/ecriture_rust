@@ -67,17 +67,27 @@ Ce projet est la version refaite en Rust (avec Tauri pour le frontend) de l'appl
    ```
 
 4. **Lancer l'application en mode Développement :**
-   Cette commande va démarrer le serveur de développement Vite (frontend) et compiler/exécuter l'application Tauri (backend Rust).
    ```bash
-   npm run tauri dev
+   npm run start
    ```
+   Cette commande détecte votre GPU (s'il y en a un) de la même façon
+   que `scripts/detect-gpu.sh`, et lance avec le flag `--features gpu-*`
+   correspondant automatiquement — rien à retenir, et elle reste
+   correctement en CPU seul sur une machine sans GPU utilisable. Elle
+   démarre ensuite le serveur de développement Vite (frontend) et
+   compile/exécute l'application Tauri (backend Rust), comme
+   `npm run tauri dev` (toujours disponible si vous voulez forcer un
+   backend précis à la main — voir « Accélération GPU » plus bas — ou
+   forcer le CPU seul quel que soit ce qui est détecté).
 
 5. **Compiler l'application pour la Production :**
-   Une fois que vous souhaitez créer un exécutable autonome, utilisez la commande suivante :
-   ```bash
-   npm run tauri build
-   ```
-   L'exécutable généré se trouvera dans `ecriture-rust/src-tauri/target/release/`.
+   Voir « Compiler l'application distribuable » sous « Accélération GPU »
+   plus bas pour `npm run package:linux` / `npm run package:windows` —
+   ces commandes produisent l'app installable proprement dite, avec la
+   même détection automatique du GPU mais décidée à l'*exécution* (par
+   la personne qui la lance) plutôt que sur votre machine au moment de la
+   compilation. L'exécutable généré se trouvera dans
+   `ecriture-rust/src-tauri/target/release/`.
 
 ## Architecture du Projet
 
@@ -143,28 +153,36 @@ llama.cpp — le même moteur que l'application Python pilotait via
 
 Le moteur *demande* toujours de décharger toutes les couches sur un GPU
 (`n_gpu_layers` est fixé à une valeur élevée sans condition) ; que cela
-se produise réellement dépend du backend GPU compilé. **Par défaut,
-aucun ne l'est** — `cargo build`/`npm run tauri dev` produisent une
-compilation CPU uniquement, volontairement, car chaque backend a besoin
-du SDK de son fabricant installé au moment de la *compilation*, et
-supposer sa présence risquerait de casser le build comme l'a fait le
-prérequis non documenté clang/bindgen (voir plus haut). Activer le
-mauvais backend, ou un backend dont le SDK n'est pas installé, fait
-échouer la compilation ; vérifiez la sortie terminal de
-`npm run tauri dev` après votre première requête IA — elle affiche
-`[ai] ggml backend devices` listant chaque périphérique visible par
-llama.cpp, GPU ou non — pour confirmer qu'il est bien utilisé.
+se produise réellement dépend du backend GPU compilé.
 
-Vous ne savez pas laquelle (s'il y en a une) s'applique à votre machine ?
-Lancez `ecriture-rust/scripts/detect-gpu.sh` — il inspecte le matériel et
-les SDK réellement installés sur la machine où il tourne (fabricant du
-GPU via `lspci`/`nvidia-smi`, installation de CUDA/ROCm, un pilote Vulkan
-fonctionnel, ou aucun GPU du tout) et affiche quelle feature `gpu-*`
-utiliser, le cas échéant — le CPU seul reste toujours un choix sûr si
-rien de spécifique à un GPU n'est détecté.
+**`npm run start` détecte cela automatiquement** — c'est un petit script
+(`scripts/dev-with-gpu.sh`) qui lance la même détection matérielle que
+`scripts/detect-gpu.sh` avant de démarrer `tauri dev`, et transmet
+automatiquement le flag `--features gpu-*` correspondant. C'est la façon
+recommandée de lancer l'app au quotidien : rien à retenir, et elle reste
+correctement en CPU seul quand rien de spécifique à un GPU n'est détecté.
+`cargo build`/`npm run tauri dev` (sans le script) produisent toujours
+une compilation CPU uniquement, sans changement — utile si vous voulez
+forcer le CPU seul quel que soit ce qui est installé, ou si `bash` n'est
+pas disponible (le script en a besoin ; sous Windows sans Git Bash/WSL,
+choisissez plutôt une feature à la main dans le tableau ci-dessous).
+Activer la mauvaise feature, ou une feature dont le SDK n'est pas
+installé, fait échouer la compilation ; vérifiez la sortie terminal après
+votre première requête IA — elle affiche `[ai] ggml backend devices`
+listant chaque périphérique visible par llama.cpp, GPU ou non — pour
+confirmer que le bon backend est bien utilisé.
 
-Choisissez la fonctionnalité (feature) correspondant à votre GPU et
-transmettez-la à la compilation :
+Vous voulez le rapport lisible plutôt que le lancement direct ? Lancez
+`ecriture-rust/scripts/detect-gpu.sh` directement — il inspecte le
+matériel et les SDK réellement installés sur la machine où il tourne
+(fabricant du GPU via `lspci`/`nvidia-smi`, installation de CUDA/ROCm, un
+pilote Vulkan fonctionnel, ou aucun GPU du tout) et explique quelle
+feature `gpu-*` il utiliserait, le cas échéant (`./detect-gpu.sh
+--feature` n'affiche que le nom de la feature, ce que `npm run start`
+récupère directement).
+
+Ou choisissez à la main la fonctionnalité (feature) correspondant à
+votre GPU et transmettez-la à la compilation :
 
 | Fabricant | Feature | Nécessite d'abord |
 |---|---|---|

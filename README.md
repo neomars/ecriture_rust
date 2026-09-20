@@ -67,17 +67,25 @@ This project is a Rust port (using Tauri for the frontend) of the original appli
    ```
 
 4. **Run the application in Development Mode:**
-   This command will start the Vite development server (frontend) and compile/run the Tauri application (Rust backend).
    ```bash
-   npm run tauri dev
+   npm run start
    ```
+   This detects your GPU (if any) the same way `scripts/detect-gpu.sh`
+   does and launches with the matching `--features gpu-*` flag
+   automatically - no flag to remember, and it correctly stays CPU-only
+   on a machine without a usable GPU. It then starts the Vite
+   development server (frontend) and compiles/runs the Tauri application
+   (Rust backend), same as `npm run tauri dev` (still available if you
+   want to force a specific backend by hand - see "GPU acceleration"
+   below - or force CPU-only regardless of what's detected).
 
 5. **Build the application for Production:**
-   When you want to create a standalone executable, use the following command:
-   ```bash
-   npm run tauri build
-   ```
-   The generated executable will be located in `ecriture-rust/src-tauri/target/release/`.
+   See "Building the distributable app" under "GPU acceleration" below
+   for `npm run package:linux` / `npm run package:windows` - these
+   produce the actual installable app, with the same GPU auto-detection
+   but decided at *runtime* (by whoever ends up running it) rather than
+   on your machine at build time. The generated executable will be
+   located in `ecriture-rust/src-tauri/target/release/`.
 
 ## Project Architecture
 
@@ -138,25 +146,33 @@ llama.cpp — the same engine the Python app drives through
 
 The engine always *asks* to offload every layer to a GPU
 (`n_gpu_layers` is set to a large value unconditionally); whether that
-actually happens depends on which GPU backend was compiled in. **By
-default, none is** — `cargo build`/`npm run tauri dev` produce a
-CPU-only build, deliberately, because each backend needs its vendor's
-SDK installed at *build* time, and assuming one is present would risk
-breaking the build the same way the undocumented clang/bindgen
-requirement did (see above). Enabling the wrong one, or one whose SDK
-isn't installed, fails the build; check `npm run tauri dev`'s terminal
-output for `[ai] ggml backend devices` after your first AI request (it
-lists every device llama.cpp can see, GPU or not) to confirm it's
+actually happens depends on which GPU backend was compiled in.
+
+**`npm run start` detects this automatically** - it's a small wrapper
+(`scripts/dev-with-gpu.sh`) that runs the same hardware detection as
+`scripts/detect-gpu.sh` before launching `tauri dev`, and passes the
+matching `--features gpu-*` flag through for you. This is the
+recommended way to run the app day-to-day: no flag to remember, and it
+correctly stays CPU-only when nothing GPU-specific is detected. Plain
+`cargo build`/`npm run tauri dev` (no wrapper) still produce a CPU-only
+build, unaffected - useful if you want to force CPU-only regardless of
+what's installed, or if `bash` isn't available (the wrapper needs it;
+Windows users without Git Bash/WSL should pick a feature from the table
+below by hand instead). Enabling the wrong feature, or one whose SDK
+isn't installed, fails the build; check the terminal output for
+`[ai] ggml backend devices` after your first AI request (it lists every
+device llama.cpp can see, GPU or not) to confirm the right one is
 actually being used.
 
-Not sure which (if any) applies to your machine? Run
-`ecriture-rust/scripts/detect-gpu.sh` - it inspects the actual hardware
-and installed SDKs on the machine it runs on (GPU vendor via `lspci`/
-`nvidia-smi`, CUDA/ROCm install, a working Vulkan driver, or no GPU at
-all) and prints which `--features gpu-*` flag to use, if any - CPU-only
-is always a safe fallback if nothing GPU-specific is detected.
+Want the human-readable report instead of just launching? Run
+`ecriture-rust/scripts/detect-gpu.sh` directly - it inspects the actual
+hardware and installed SDKs on the machine it runs on (GPU vendor via
+`lspci`/`nvidia-smi`, CUDA/ROCm install, a working Vulkan driver, or no
+GPU at all) and explains which `--features gpu-*` flag it would use, if
+any (`./detect-gpu.sh --feature` prints just the flag name, which is
+what `npm run start` captures).
 
-Pick the feature matching your GPU and pass it through when building:
+Or pick the feature matching your GPU by hand and pass it through when building:
 
 | Vendor | Feature | Needs installed first |
 |---|---|---|
