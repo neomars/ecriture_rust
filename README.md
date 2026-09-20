@@ -144,9 +144,16 @@ llama.cpp — the same engine the Python app drives through
 
 #### GPU acceleration
 
-The engine always *asks* to offload every layer to a GPU
-(`n_gpu_layers` is set to a large value unconditionally); whether that
-actually happens depends on which GPU backend was compiled in.
+The engine always *asks* to offload every layer to a GPU (`n_gpu_layers`
+is set to a large value unconditionally) - but only on a GPU device
+reporting at least 3 GiB of total memory. The bundled Gemma-2-2b
+checkpoint is ~2.7 GB on disk, and its KV cache + compute buffers add
+real overhead on top at runtime, so a smaller GPU is more likely to fail
+to allocate (or barely help, offloading only a handful of layers) than
+to give the speedup GPU offload is for - below that threshold, that
+device is skipped and every layer stays on CPU instead. Whether any of
+this actually happens at all further depends on which GPU backend was
+compiled in.
 
 **`npm run start` detects this automatically** - it's a small wrapper
 (`scripts/dev-with-gpu.sh`) that runs the same hardware detection as
@@ -235,11 +242,11 @@ npm run package:linux      # produces the Linux app
 npm run package:windows    # produces the Windows .exe
 ```
 
-- On a machine with a Vulkan-capable GPU (NVIDIA/AMD/Intel - the
-  overwhelming majority of PCs), it's used automatically: `n_gpu_layers`
-  is always requested (see above), and llama.cpp's own device
-  enumeration at startup decides whether there's actually anything to
-  offload to.
+- On a machine with a Vulkan-capable GPU with at least 3 GiB of memory
+  (NVIDIA/AMD/Intel - the overwhelming majority of PCs), it's used
+  automatically: `n_gpu_layers` is always requested (see above), and
+  llama.cpp's own device enumeration at startup decides whether there's
+  actually anything big enough to offload to.
 - On a machine with no GPU (or no working Vulkan driver), it falls back
   to CPU automatically - no separate build, no user-facing toggle to
   flip.
