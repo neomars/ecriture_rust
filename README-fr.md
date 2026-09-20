@@ -215,6 +215,57 @@ bindings), mais un GPU Intel discret ou intégré exposant un pilote
 Vulkan (typiquement sous Linux via le pilote `ANV` de Mesa) reste
 accessible via `gpu-vulkan`.
 
+#### Compiler l'application distribuable (.exe Windows / app Linux)
+
+Les commandes ci-dessus (`cargo build --features gpu-cuda`, etc.) sont
+pour le développement local — on choisit à l'avance la feature d'un
+fabricant précis, à la main. L'**application distribuable** proprement
+dite — ce que les utilisateurs finaux installent, un `.exe` Windows ou un
+paquet Linux — se compile différemment : avec `gpu-vulkan` toujours
+activé, de sorte qu'un seul binaire livré s'adapte à ce qui se trouve
+réellement sur la machine de l'utilisateur final, à l'*exécution*, sans
+que personne n'ait à choisir une compilation à l'avance :
+
+```bash
+# depuis ecriture-rust
+npm run package:linux      # produit l'app Linux
+npm run package:windows    # produit le .exe Windows
+```
+
+- Sur une machine avec un GPU compatible Vulkan (NVIDIA/AMD/Intel — la
+  grande majorité des PC), il est utilisé automatiquement :
+  `n_gpu_layers` est toujours demandé (voir plus haut), et l'énumération
+  des périphériques par llama.cpp lui-même au démarrage détermine s'il y
+  a effectivement quelque chose à y décharger.
+- Sur une machine sans GPU (ou sans pilote Vulkan fonctionnel), l'app
+  retombe automatiquement sur le CPU — pas de compilation séparée, pas
+  de bascule visible pour l'utilisateur.
+- `package:windows` définit en plus `LLAMA_STATIC_CRT=1` (une variable
+  d'environnement de compilation de `llama-cpp-sys-2`), afin que la
+  compilation Windows lie statiquement le runtime C de MSVC dans
+  l'exécutable, plutôt que de dépendre du Redistribuable Visual C++ déjà
+  installé chez l'utilisateur final — le distribuable est censé
+  fonctionner de façon autonome, sans rien d'autre à installer que ce
+  qu'un PC avec un affichage fonctionnel possède déjà.
+- Vérifiez `[ai] ggml backend devices` dans les logs de l'app après votre
+  première requête IA pour confirmer qu'un GPU a bien été trouvé et
+  utilisé — cela fonctionne à l'identique dans le distribuable et sous
+  `cargo tauri dev`.
+
+**Cas limite connu** : ceci lie l'app au loader Vulkan du système
+(`libvulkan.so.1` / `vulkan-1.dll`), que toute machine avec un pilote GPU
+fonctionnel possède déjà — l'app ne l'embarque pas elle-même, de la même
+façon qu'elle n'embarque pas les pilotes GPU. Ce n'est cependant pas
+littéralement toutes les machines : une installation véritablement sans
+tête, sans aucune pile d'affichage/graphique (inhabituel pour les
+utilisateurs réels de cette application, un outil d'écriture de bureau,
+mais possible par exemple sur une installation minimale de type serveur)
+pourrait ne pas avoir du tout le loader Vulkan, auquel cas l'app
+échouerait à *démarrer* plutôt que de retomber proprement sur le CPU. Si
+ce cas se présente, `npm run tauri build` (sans le flag `--features`)
+produit une compilation CPU uniquement sans cette dépendance, comme
+distribuable de secours.
+
 **Non vérifié de bout en bout dans l'environnement où ce code a été
 écrit** : la politique réseau de ce bac à sable bloque `huggingface.co`,
 donc le vrai téléchargement de plusieurs Go et une vraie génération n'ont

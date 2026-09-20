@@ -203,6 +203,52 @@ backend isn't among the bindings' flags), but a discrete or integrated
 Intel GPU exposing a Vulkan driver (typical on Linux via Mesa's `ANV`
 driver) can still be reached through `gpu-vulkan`.
 
+#### Building the distributable app (Windows .exe / Linux app)
+
+The commands above (`cargo build --features gpu-cuda`, etc.) are for
+local development - picking one specific vendor's feature by hand ahead
+of time. The actual **distributable app** - what end users install as a
+Windows `.exe` or a Linux package - is built differently: with
+`gpu-vulkan` always on, so a single shipped binary adapts to whatever's
+actually on the end user's machine at *runtime*, instead of anyone
+needing to pick a build in advance:
+
+```bash
+# from ecriture-rust
+npm run package:linux      # produces the Linux app
+npm run package:windows    # produces the Windows .exe
+```
+
+- On a machine with a Vulkan-capable GPU (NVIDIA/AMD/Intel - the
+  overwhelming majority of PCs), it's used automatically: `n_gpu_layers`
+  is always requested (see above), and llama.cpp's own device
+  enumeration at startup decides whether there's actually anything to
+  offload to.
+- On a machine with no GPU (or no working Vulkan driver), it falls back
+  to CPU automatically - no separate build, no user-facing toggle to
+  flip.
+- `package:windows` additionally sets `LLAMA_STATIC_CRT=1` (a
+  `llama-cpp-sys-2` build-time env var), so the Windows build statically
+  links the MSVC C runtime into the executable instead of depending on
+  the end user having the Visual C++ Redistributable already installed -
+  the distributable is meant to run standalone, with nothing extra to
+  install beyond what a PC with a working display already has.
+- Check `[ai] ggml backend devices` in the app's logs after the first AI
+  request to confirm whether a GPU was actually found and used - this
+  works identically in the distributable and in `cargo tauri dev`.
+
+**Known edge case**: this links against the system's Vulkan loader
+(`libvulkan.so.1` / `vulkan-1.dll`), which any machine with a working GPU
+driver already has - the app doesn't bundle this itself, the same way it
+doesn't bundle GPU drivers. That's not literally every machine, though: a
+genuinely headless install with no display/graphics stack at all
+(unusual for this app's actual users, a desktop writing tool, but
+possible on e.g. a minimal server-like setup) may lack the Vulkan loader
+entirely, in which case the app would fail to *launch* rather than
+gracefully falling back to CPU. If that's ever hit, `npm run tauri build`
+(no `--features` flag) produces a CPU-only build with no such dependency,
+as a fallback distributable.
+
 **Not verified end-to-end in the environment this was built in**: that
 sandbox's network policy blocks `huggingface.co`, so the actual multi-GB
 download and a real generation could not be run there. The download
