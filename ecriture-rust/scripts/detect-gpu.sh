@@ -10,9 +10,20 @@
 # THIS machine, so you don't have to know your own hardware/driver setup
 # in advance. A CPU-only recommendation is always safe and always works.
 #
-# Usage: ./detect-gpu.sh
+# Usage:
+#   ./detect-gpu.sh            human-readable report (see below)
+#   ./detect-gpu.sh --feature  prints ONLY the recommended feature name
+#                               (e.g. "gpu-cuda"), or nothing for
+#                               CPU-only - meant for scripts (see
+#                               dev-with-gpu.sh) to capture directly,
+#                               e.g. FEATURE="$(./detect-gpu.sh --feature)"
 
 set -u
+
+machine_mode=false
+if [ "${1:-}" = "--feature" ]; then
+    machine_mode=true
+fi
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -78,6 +89,11 @@ elif [[ "$os" == MINGW* || "$os" == MSYS* || "$os" == CYGWIN* ]]; then
     notes+=("Windows detected via a POSIX shell - run this from PowerShell instead isn't supported by this script. Check Device Manager for your GPU vendor and see the README's GPU acceleration table; gpu-vulkan additionally needs the Vulkan SDK and VULKAN_SDK set on Windows.")
 else
     notes+=("Unrecognized OS '$os' - see the README's GPU acceleration section and pick the feature matching your hardware manually.")
+fi
+
+if $machine_mode; then
+    echo "$recommend"
+    exit 0
 fi
 
 echo "=== ecriture-rust GPU detection ==="
