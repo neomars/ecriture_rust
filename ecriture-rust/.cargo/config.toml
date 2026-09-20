@@ -1,0 +1,19 @@
+# Applies to any `cargo`/`tauri` invocation from ecriture-core/ or
+# src-tauri/ (Cargo searches upward from the current directory for
+# .cargo/config.toml, so this is found from either).
+
+[env]
+# Rust binaries on Linux are built as PIE (position-independent
+# executables) by default, and the linker Cargo ends up using here
+# (rust-lld) enforces that strictly. CMake's own C/C++ compilation
+# already produces PIC code that satisfies this, but its CUDA language
+# support does NOT unless explicitly told to - without this,
+# `--features gpu-cuda` fails to link with errors like
+# "relocation R_X86_64_PC32 cannot be used against symbol 'stderr';
+# recompile with -fPIC" coming out of the nvcc-compiled .cu.o objects.
+# llama-cpp-sys-2's build.rs auto-forwards any CMAKE_-prefixed env var
+# straight into its CMake configure step, which is what makes setting it
+# here (rather than needing every dev to pass `-fPIC` to nvcc by hand)
+# enough to fix it for CUDA - and it's a no-op, harmless default for the
+# CPU-only and Vulkan/ROCm/Metal builds, which don't need it.
+CMAKE_POSITION_INDEPENDENT_CODE = "ON"
