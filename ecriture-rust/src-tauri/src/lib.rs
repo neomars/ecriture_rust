@@ -255,7 +255,7 @@ struct AiToolResponse {
 /// structure in `main.py::handle_ai_tool`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // one JS-facing key per Tauri command arg; a struct would nest under one key instead
-fn ai_tool(
+async fn ai_tool(
     tool: String,
     style: String,
     text: String,
@@ -263,7 +263,7 @@ fn ai_tool(
     temperature: Option<f32>,
     scene_id: Option<String>,
     inject_lore_context: Option<bool>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<AiToolResponse, String> {
     let mut system_prompt = ai::build_tool_system_prompt(&tool, &style, &lang).map_err(|e| e.to_string())?;
 
@@ -280,7 +280,17 @@ fn ai_tool(
             ai::ChatMessage { role: "system".into(), content: system_prompt },
             ai::ChatMessage { role: "user".into(), content: text.clone() },
         ]);
-        match ai::AiBackend::generate_chat(&*engine, &messages, temperature.unwrap_or(0.7)) {
+        let temperature = temperature.unwrap_or(0.7);
+        // Generation can take anywhere from seconds to well over a minute,
+        // especially on a CPU-only build - run it on Tauri's blocking
+        // thread pool rather than inline, so it never ties up the async
+        // runtime (and, critically, never blocks the WebView's own event
+        // loop the way a plain synchronous `#[tauri::command] fn` would:
+        // see the "AI window opens late" fix in this file's git history).
+        let generated = tauri::async_runtime::spawn_blocking(move || ai::AiBackend::generate_chat(&*engine, &messages, temperature))
+            .await
+            .map_err(|e| format!("AI generation task panicked: {e}"))?;
+        match generated {
             Ok(message) => return Ok(AiToolResponse { status: "success", message }),
             Err(e) => eprintln!("[ai] ai_tool: generation failed, falling back: {e}"),
         }
@@ -314,13 +324,13 @@ struct AiRelectureResponse {
 /// `category` is one of "style", "coherence" or "worldbuilding". Same
 /// real-engine-then-fallback strategy as [`ai_tool`].
 #[tauri::command]
-fn ai_relecture(
+async fn ai_relecture(
     category: String,
     text: String,
     lang: String,
     temperature: Option<f32>,
     lore_context: Option<String>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<AiRelectureResponse, String> {
     let fallback_category = match category.as_str() {
         "style" => "relecture_style",
@@ -337,7 +347,11 @@ fn ai_relecture(
             ai::ChatMessage { role: "system".into(), content: system_prompt },
             ai::ChatMessage { role: "user".into(), content: text.clone() },
         ]);
-        match ai::AiBackend::generate_chat(&*engine, &messages, temperature.unwrap_or(0.7)) {
+        let temperature = temperature.unwrap_or(0.7);
+        let generated = tauri::async_runtime::spawn_blocking(move || ai::AiBackend::generate_chat(&*engine, &messages, temperature))
+            .await
+            .map_err(|e| format!("AI generation task panicked: {e}"))?;
+        match generated {
             Ok(feedback) => return Ok(AiRelectureResponse { status: "success", feedback }),
             Err(e) => eprintln!("[ai] ai_relecture: generation failed, falling back: {e}"),
         }
@@ -359,13 +373,13 @@ struct AiChatResponse {
 /// chat sidebar). `messages` is the full conversation so far, oldest
 /// first, with roles among "system"/"user"/"assistant".
 #[tauri::command]
-fn ai_chat(
+async fn ai_chat(
     mut messages: Vec<ai::ChatMessage>,
     lang: String,
     temperature: Option<f32>,
     scene_id: Option<String>,
     inject_lore_context: Option<bool>,
-    state: State<AppState>,
+    state: State<'_, AppState>,
 ) -> Result<AiChatResponse, String> {
     let mut system_msgs = vec![format!(
         "Respond strictly in this language: {}.",
@@ -390,7 +404,11 @@ fn ai_chat(
 
     let normalized = ai::normalize_gemma_messages(&messages);
     if let Some(engine) = get_or_load_engine(&state) {
-        match ai::AiBackend::generate_chat(&*engine, &normalized, temperature.unwrap_or(0.7)) {
+        let temperature = temperature.unwrap_or(0.7);
+        let generated = tauri::async_runtime::spawn_blocking(move || ai::AiBackend::generate_chat(&*engine, &normalized, temperature))
+            .await
+            .map_err(|e| format!("AI generation task panicked: {e}"))?;
+        match generated {
             Ok(message) => return Ok(AiChatResponse { status: "success", message }),
             Err(e) => eprintln!("[ai] ai_chat: generation failed, falling back: {e}"),
         }
@@ -433,7 +451,7 @@ struct AiExtractResponse {
 /// `main.py::api_extract_characters`, which likewise just reports an error
 /// when the model is unavailable or its output isn't parseable JSON.
 #[tauri::command]
-fn ai_extract_characters(text: String, lang: String, state: State<AppState>) -> Result<AiExtractResponse, String> {
+async fn ai_extract_characters(text: String, lang: String, state: State<'_, AppState>) -> Result<AiExtractResponse, String> {
     let text = text.trim();
     if text.is_empty() {
         return Ok(AiExtractResponse {
@@ -457,7 +475,11 @@ fn ai_extract_characters(text: String, lang: String, state: State<AppState>) -> 
         ai::ChatMessage { role: "user".into(), content: text.to_string() },
     ]);
 
-    match ai::AiBackend::generate_chat(&*engine, &messages, 0.1) {
+    let generated = tauri::async_runtime::spawn_blocking(move || ai::AiBackend::generate_chat(&*engine, &messages, 0.1))
+        .await
+        .map_err(|e| format!("AI generation task panicked: {e}"))?;
+
+    match generated {
         Ok(content) => match ai::extract_json_array(&content) {
             Some(characters) => Ok(AiExtractResponse {
                 status: "success",
