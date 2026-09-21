@@ -207,6 +207,35 @@ impl ProjectManager {
         Ok(())
     }
 
+    /// Copies every `.json` file from `source_dir` (a bundled
+    /// `default_projects` resource directory - see
+    /// `ecriture-core/resources/default_projects`) into `projects_dir`,
+    /// skipping any file that already exists there. Ports
+    /// `main.py::init_default_projects`, which does the same thing on
+    /// every app startup so a user's own edits (or deletion) of a default
+    /// project are never overwritten - this is a one-time seed, not a
+    /// sync. A missing or unreadable `source_dir` is not an error: it
+    /// just means nothing gets seeded (e.g. a `cargo test` invocation
+    /// with no bundled resources available).
+    pub fn seed_default_projects(&self, source_dir: &Path) -> Result<()> {
+        self.ensure_dirs()?;
+        let Ok(entries) = fs::read_dir(source_dir) else {
+            return Ok(());
+        };
+        for entry in entries {
+            let Ok(entry) = entry else { continue };
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let dest = self.projects_dir.join(path.file_name().unwrap());
+            if !dest.exists() {
+                fs::copy(&path, &dest)?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn list_projects(&self) -> Result<Vec<ProjectSummary>> {
         self.ensure_dirs()?;
         let mut out = Vec::new();
@@ -578,6 +607,68 @@ mod tests {
 
         let result = mgr.delete_project("le_comte_de_monte_cristo.json");
         assert!(matches!(result, Err(ProjectError::ProtectedProject)));
+    }
+
+    #[test]
+    fn seed_default_projects_copies_bundled_files_without_overwriting() {
+        let dir = tempdir().unwrap();
+        let mgr = ProjectManager::new(dir.path());
+
+        let source_dir = tempdir().unwrap();
+        fs::write(source_dir.path().join("le_comte_de_monte_cristo.json"), "{\"settings\":{\"title\":\"Le Comte de Monte-Cristo\"}}").unwrap();
+        fs::write(source_dir.path().join("not_json.txt"), "should be ignored").unwrap();
+
+        mgr.seed_default_projects(source_dir.path()).unwrap();
+        assert!(mgr.projects_dir.join("le_comte_de_monte_cristo.json").exists());
+        assert!(!mgr.projects_dir.join("not_json.txt").exists());
+
+        // A user's own edits to (or deletion of) the seeded project must
+        // survive a second seed call - this is a one-time seed, not a sync.
+        fs::write(
+            mgr.projects_dir.join("le_comte_de_monte_cristo.json"),
+            "{\"settings\":{\"title\":\"Edited by the user\"}}",
+        )
+        .unwrap();
+        mgr.seed_default_projects(source_dir.path()).unwrap();
+        let content = fs::read_to_string(mgr.projects_dir.join("le_comte_de_monte_cristo.json")).unwrap();
+        assert!(content.contains("Edited by the user"));
+    }
+
+    #[test]
+    fn seed_default_projects_is_a_noop_when_source_dir_is_missing() {
+        let dir = tempdir().unwrap();
+        let mgr = ProjectManager::new(dir.path());
+        // Must not error just because no bundled resources are available
+        // (e.g. a plain `cargo test` run with no Tauri AppHandle).
+        mgr.seed_default_projects(&dir.path().join("does_not_exist")).unwrap();
+    }
+
+    /// The real bundled Monte-Cristo project (ecriture-core/resources/
+    /// default_projects/le_comte_de_monte_cristo.json) must deserialize
+    /// cleanly into NovelData - a non-regression guard against the file
+    /// drifting out of sync with the model, or a bad re-export corrupting
+    /// it.
+    #[test]
+    fn bundled_monte_cristo_project_deserializes_and_round_trips() {
+        let path = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/default_projects/le_comte_de_monte_cristo.json"));
+        let content = fs::read_to_string(&path).expect("bundled Monte-Cristo project should exist");
+        let data: NovelData = serde_json::from_str(&content).expect("bundled Monte-Cristo project should deserialize into NovelData");
+
+        assert_eq!(data.settings.title, "Le Comte de Monte-Cristo");
+        assert_eq!(data.settings.lang, "fr");
+        assert!(!data.manuscript.is_empty());
+        assert!(!data.characters.is_empty());
+
+        // Round-trip: saving it back out must not silently drop data (the
+        // #[serde(flatten)] extra-fields pattern this crate uses elsewhere).
+        let mut project = NovelProject { filepath: None, data: data.clone() };
+        let dir = tempdir().unwrap();
+        project.filepath = Some(dir.path().join("le_comte_de_monte_cristo.json"));
+        project.save().unwrap();
+        let mut reloaded = NovelProject::new(project.filepath.clone());
+        reloaded.load().unwrap();
+        assert_eq!(reloaded.data.characters.len(), data.characters.len());
+        assert_eq!(reloaded.data.manuscript.len(), data.manuscript.len());
     }
 
     #[test]

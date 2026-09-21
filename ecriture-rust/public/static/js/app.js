@@ -385,8 +385,8 @@ window.showConfirm = function(message) {
                 });
 
                 // Get active project filename
-                const activeData = await window.api_invoke("get_active_project");
-                select.value = activeData.active_filename;
+                const activeFilename = await window.api_invoke("get_active_project_filename");
+                select.value = activeFilename;
             } catch (err) {
                 console.error("Error loading projects list:", err);
             }
@@ -648,6 +648,16 @@ window.showConfirm = function(message) {
 
             if (typeof updateChatWelcomeMessage === "function") {
                 updateChatWelcomeMessage();
+            }
+
+            // The word/char counters in the editor footer are plain text
+            // (not [data-i18n], since they interpolate a number) built via
+            // formatTranslation() at the moment they're last updated - so
+            // switching language here doesn't retranslate them on its own,
+            // they'd keep showing stale text in the previous language until
+            // the next keystroke. Refresh them now too.
+            if (typeof updateEditorWordsCount === "function") {
+                updateEditorWordsCount();
             }
         }
 

@@ -14,8 +14,9 @@
     "windows": [
       {
         "title": "ecriture-rust",
-        "width": 800,
-        "height": 600
+        "width": 1280,
+        "height": 800,
+        "maximized": true
       }
     ],
     "security": {
@@ -33,7 +34,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../ecriture-core/resources/lexique.db": "resources/lexique.db"
+      "../ecriture-core/resources/lexique.db": "resources/lexique.db",
+      "../ecriture-core/resources/default_projects": "resources/default_projects"
     }
   }
 }
