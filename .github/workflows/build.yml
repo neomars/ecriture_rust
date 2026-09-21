@@ -126,17 +126,17 @@ jobs:
             ecriture-rust/ecriture-core
             ecriture-rust/src-tauri
 
-      # Installs ecriture-rust's own deps directly rather than `npm install`
-      # at the repo root (which triggers that via a "postinstall" hook
-      # spawning a second, nested npm process): on windows-latest that
-      # nested npm invocation fails with "'npm' is not recognized" -
-      # confirmed against a real failed CI run (Linux/macOS tolerate the
-      # nesting fine, Windows' cmd.exe-based spawn doesn't). This is
-      # simpler and sidesteps that entirely; the root package.json's own
-      # deps aren't needed to run `npm run package:*`, which just delegates
-      # into ecriture-rust via --prefix.
+      # Runs directly inside ecriture-rust rather than via the repo root's
+      # `npm install`/`npm run --prefix ecriture-rust` delegation: on
+      # windows-latest, both the root's postinstall hook AND a plain
+      # `npm install --prefix ecriture-rust` fail with "'npm' is not
+      # recognized" - confirmed against two separate real failed CI runs
+      # (Linux/macOS tolerate `--prefix` fine, something about Windows'
+      # cmd.exe-based spawn under `--prefix` doesn't). cd'ing in directly
+      # with working-directory avoids `--prefix` entirely.
       - name: Install npm dependencies
-        run: npm install --prefix ecriture-rust
+        working-directory: ecriture-rust
+        run: npm install
 
       # bindgen's libclang doesn't always find its own bundled headers on
       # a fresh install - see the README's "stdbool.h file not found"
@@ -146,6 +146,7 @@ jobs:
         run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(clang -print-resource-dir)/include" >> "$GITHUB_ENV"
 
       - name: Build the app
+        working-directory: ecriture-rust
         run: npm run ${{ matrix.package_script }}
 
       - name: Upload build artifacts
