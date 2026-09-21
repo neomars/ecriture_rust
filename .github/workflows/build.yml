@@ -37,10 +37,6 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 75
-    env:
-      # Only affects the macOS build (ignored elsewhere) - see the "Install
-      # cmake (macOS)" step's comment for why this is required.
-      MACOSX_DEPLOYMENT_TARGET: "11.0"
 
     steps:
       - uses: actions/checkout@v4
@@ -101,12 +97,15 @@ jobs:
       # calls out as not always preinstalled. llama.cpp's
       # ggml-backend-reg.cpp unconditionally uses std::filesystem::path /
       # u8path(), which Apple's SDK marks "introduced in macOS 10.15" -
-      # without an explicit MACOSX_DEPLOYMENT_TARGET, Rust's default
-      # target triple leaves it unset, so Clang's availability checks
-      # reject that usage outright. Confirmed this is unrelated to Xcode
-      # version (the same failure reproduced on both Xcode 26.6 on
-      # macos-latest and Xcode 15.4 on macos-14); setting
-      # MACOSX_DEPLOYMENT_TARGET below is the actual fix.
+      # below that deployment target, Clang's availability checks reject
+      # that usage outright. A job-level MACOSX_DEPLOYMENT_TARGET env var
+      # does NOT fix this: tauri-cli reads bundle.macOS.minimumSystemVersion
+      # from tauri.conf.json (defaults to "10.13") and sets its own
+      # MACOSX_DEPLOYMENT_TARGET from that when it spawns `cargo build`,
+      # overriding whatever the job env says - confirmed via a real CI run
+      # where the env var was set to 11.0 but llama-cpp-sys-2's build
+      # script still saw MACOSX_DEPLOYMENT_TARGET=10.13. The actual fix is
+      # tauri.conf.json's "bundle.macOS.minimumSystemVersion": "11.0".
       - name: Install cmake (macOS)
         if: matrix.platform == 'macos-14'
         run: brew install cmake
@@ -127,8 +126,17 @@ jobs:
             ecriture-rust/ecriture-core
             ecriture-rust/src-tauri
 
+      # Installs ecriture-rust's own deps directly rather than `npm install`
+      # at the repo root (which triggers that via a "postinstall" hook
+      # spawning a second, nested npm process): on windows-latest that
+      # nested npm invocation fails with "'npm' is not recognized" -
+      # confirmed against a real failed CI run (Linux/macOS tolerate the
+      # nesting fine, Windows' cmd.exe-based spawn doesn't). This is
+      # simpler and sidesteps that entirely; the root package.json's own
+      # deps aren't needed to run `npm run package:*`, which just delegates
+      # into ecriture-rust via --prefix.
       - name: Install npm dependencies
-        run: npm install
+        run: npm install --prefix ecriture-rust
 
       # bindgen's libclang doesn't always find its own bundled headers on
       # a fresh install - see the README's "stdbool.h file not found"
