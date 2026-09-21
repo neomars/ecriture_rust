@@ -80,16 +80,21 @@ jobs:
       # needs) - confirmed against a real failed CI run. The official
       # installer bundles a working Bin/glslc.exe directly.
       #
-      # Also sets CL=/FS: llama.cpp's ggml-vulkan CMakeLists builds its
-      # "vulkan-shaders-gen" host tool as a separate CMake
-      # ExternalProject, and that sub-project's own compiler-detection
-      # try_compile step doesn't inherit the outer build's CMAKE_C_FLAGS
-      # (which already has /FS) - under a parallel MSVC build this causes
-      # "cannot open program database ...vc145.pdb...; if multiple
+      # Also sets CMAKE_BUILD_PARALLEL_LEVEL=1: llama.cpp's ggml-vulkan
+      # CMakeLists builds its "vulkan-shaders-gen" host tool as a separate
+      # CMake ExternalProject, and that sub-project's own
+      # compiler-detection try_compile step doesn't inherit the outer
+      # build's CMAKE_C_FLAGS (which already has /FS, set by
+      # llama-cpp-sys-2's own build.rs) - under a parallel MSVC build this
+      # causes "cannot open program database ...vc145.pdb...; if multiple
       # CL.EXE write to the same .PDB file, please use /FS", confirmed in
-      # a real failed CI run. The CL env var is read by cl.exe itself and
-      # prepended to every invocation, so it reaches the sub-project's
-      # try_compile too, unlike a CMAKE_C_FLAGS override.
+      # a real failed CI run. Tried setting the CL env var (which cl.exe
+      # itself is documented to read) first, but MSBuild-driven cl.exe
+      # invocations ignore CL/_CL_ entirely - confirmed it had zero effect
+      # in a second real failed run with the identical error. Since
+      # llama-cpp-sys-2's build.rs explicitly reads
+      # CMAKE_BUILD_PARALLEL_LEVEL instead of always auto-detecting CPU
+      # count, forcing it to 1 removes the concurrency window instead.
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -102,7 +107,7 @@ jobs:
           if ($proc.ExitCode -ne 0) { throw "Vulkan SDK installer exited with code $($proc.ExitCode)" }
           echo "VULKAN_SDK=C:\VulkanSDK\$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "C:\VulkanSDK\$ver\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          echo "CL=/FS" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CMAKE_BUILD_PARALLEL_LEVEL=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       # --- macOS: gpu-metal needs nothing beyond Xcode's command line
       # tools (already on the runner) except cmake, which the README also
