@@ -78,6 +78,27 @@ fn resolve_lexique_db_path(app: &tauri::App) -> Option<PathBuf> {
     dev_fallback.exists().then_some(dev_fallback)
 }
 
+/// Locates the bundled `default_projects/` resource directory (e.g. Le
+/// Comte de Monte-Cristo - see `tauri.conf.json`'s `bundle.resources` and
+/// [`ecriture_core::ProjectManager::seed_default_projects`]). Same
+/// resolve-then-dev-fallback strategy as [`resolve_lexique_db_path`].
+fn resolve_default_projects_dir(app: &tauri::App) -> Option<PathBuf> {
+    if let Ok(path) = app
+        .path()
+        .resolve("resources/default_projects", tauri::path::BaseDirectory::Resource)
+    {
+        if path.is_dir() {
+            return Some(path);
+        }
+    }
+
+    let dev_fallback = PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../ecriture-core/resources/default_projects"
+    ));
+    dev_fallback.is_dir().then_some(dev_fallback)
+}
+
 #[tauri::command]
 fn get_active_project(state: State<AppState>) -> Result<NovelData, String> {
     let project_lock = state.active_project.lock().unwrap();
@@ -86,6 +107,15 @@ fn get_active_project(state: State<AppState>) -> Result<NovelData, String> {
     } else {
         Err("No active project".into())
     }
+}
+
+/// The active project's filename alone (not its full content) - used by
+/// the frontend to pre-select the right `<option>` in the novel dropdown,
+/// since [`get_active_project`] returns only the project's data and has
+/// no room for it without changing that response shape for every caller.
+#[tauri::command]
+fn get_active_project_filename(state: State<AppState>) -> Result<String, String> {
+    state.project_manager.get_active_filename().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -666,6 +696,12 @@ pub fn run() {
                 .ensure_dirs()
                 .expect("failed to create the projects directory");
 
+            if let Some(default_projects_dir) = resolve_default_projects_dir(app) {
+                if let Err(e) = project_manager.seed_default_projects(&default_projects_dir) {
+                    eprintln!("[projects] failed to seed default projects: {e}");
+                }
+            }
+
             let initial_project = project_manager
                 .load_active()
                 .expect("failed to load or create the initial project");
@@ -682,6 +718,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_active_project,
+            get_active_project_filename,
             get_project_list,
             create_project,
             load_project,
