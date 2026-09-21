@@ -152,8 +152,16 @@ llama.cpp — le même moteur que l'application Python pilotait via
 #### Accélération GPU
 
 Le moteur *demande* toujours de décharger toutes les couches sur un GPU
-(`n_gpu_layers` est fixé à une valeur élevée sans condition) ; que cela
-se produise réellement dépend du backend GPU compilé.
+(`n_gpu_layers` est fixé à une valeur élevée sans condition) — mais
+uniquement sur un périphérique GPU annonçant au moins 3 Gio de mémoire
+totale. Le modèle Gemma-2-2b embarqué pèse environ 2,7 Go sur disque, et
+son cache KV ainsi que ses buffers de calcul ajoutent une vraie charge
+supplémentaire à l'exécution — un GPU plus petit a donc plus de chances
+d'échouer à allouer la mémoire (ou d'à peine aider, en ne déchargeant
+qu'une poignée de couches) que d'apporter le gain de vitesse recherché ;
+en dessous de ce seuil, ce périphérique est ignoré et toutes les couches
+restent sur le CPU. Que tout cela se produise réellement dépend ensuite
+du backend GPU compilé.
 
 **`npm run start` détecte cela automatiquement** — c'est un petit script
 (`scripts/dev-with-gpu.sh`) qui lance la même détection matérielle que
@@ -250,11 +258,12 @@ npm run package:linux      # produit l'app Linux
 npm run package:windows    # produit le .exe Windows
 ```
 
-- Sur une machine avec un GPU compatible Vulkan (NVIDIA/AMD/Intel — la
-  grande majorité des PC), il est utilisé automatiquement :
-  `n_gpu_layers` est toujours demandé (voir plus haut), et l'énumération
-  des périphériques par llama.cpp lui-même au démarrage détermine s'il y
-  a effectivement quelque chose à y décharger.
+- Sur une machine avec un GPU compatible Vulkan et au moins 3 Gio de
+  mémoire (NVIDIA/AMD/Intel — la grande majorité des PC), il est utilisé
+  automatiquement : `n_gpu_layers` est toujours demandé (voir plus haut),
+  et l'énumération des périphériques par llama.cpp lui-même au démarrage
+  détermine s'il y a effectivement quelque chose d'assez grand pour y
+  décharger.
 - Sur une machine sans GPU (ou sans pilote Vulkan fonctionnel), l'app
   retombe automatiquement sur le CPU — pas de compilation séparée, pas
   de bascule visible pour l'utilisateur.

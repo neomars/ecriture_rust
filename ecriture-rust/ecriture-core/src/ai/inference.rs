@@ -103,28 +103,53 @@ impl AiBackend for LlamaEngine {
 }
 
 /// Requests as many transformer layers as possible be offloaded to a GPU.
-/// This is harmless on a CPU-only build (no `cuda`/`rocm`/`metal` Cargo
-/// feature enabled): with no GPU backend compiled in, llama.cpp finds no
-/// GPU device to offload to and silently runs entirely on CPU regardless
+/// This is harmless on a CPU-only build (no `cuda`/`rocm`/`metal`/`vulkan`
+/// Cargo feature enabled): with no GPU backend compiled in, llama.cpp finds
+/// no GPU device to offload to and silently runs entirely on CPU regardless
 /// of this value. Gemma-2-2b has far fewer than 1000 layers, so this
-/// offloads the whole model whenever a GPU backend *is* available.
+/// offloads the whole model whenever a big-enough GPU *is* available (see
+/// [`MIN_GPU_MEMORY_BYTES`]).
 const GPU_LAYERS_ALL: u32 = 1000;
 
-fn log_backend_devices() {
+/// Minimum total GPU memory, in bytes, before a device is considered for
+/// offload at all. The bundled Gemma-2-2b checkpoint is ~2.7 GB on disk,
+/// and the KV cache + compute buffers add real overhead on top of that at
+/// runtime (a real CPU-only run logged ~416 MiB of KV cache for 13 of the
+/// model's 26 layers alone, plus ~509 MiB of compute buffers, for the full
+/// 8192-token context) - a GPU with less than this is far more likely to
+/// fail to allocate, or barely help by offloading only a handful of
+/// layers, than to give the speedup GPU offload is for. Below this
+/// threshold every layer stays on CPU instead, on that device.
+const MIN_GPU_MEMORY_BYTES: usize = 3 * 1024 * 1024 * 1024; // 3 GiB
+
+fn is_gpu(device_type: llama_cpp_2::LlamaBackendDeviceType) -> bool {
+    matches!(
+        device_type,
+        llama_cpp_2::LlamaBackendDeviceType::Gpu | llama_cpp_2::LlamaBackendDeviceType::IntegratedGpu
+    )
+}
+
+/// Logs every ggml backend device found (see the README's GPU
+/// acceleration section) and returns the ggml device indices of GPUs with
+/// at least [`MIN_GPU_MEMORY_BYTES`] of total memory - the ones actually
+/// worth offloading to, to be passed to
+/// [`LlamaModelParams::with_devices`]. Devices below that (or a machine
+/// with no GPU device at all) are excluded, leaving them - and the
+/// model - on CPU.
+fn log_backend_devices_and_pick_gpus() -> Vec<usize> {
     let devices = llama_cpp_2::list_llama_ggml_backend_devices();
-    let gpu_count = devices
+    let gpu_count = devices.iter().filter(|d| is_gpu(d.device_type)).count();
+    let qualifying_gpus: Vec<usize> = devices
         .iter()
-        .filter(|d| {
-            matches!(
-                d.device_type,
-                llama_cpp_2::LlamaBackendDeviceType::Gpu | llama_cpp_2::LlamaBackendDeviceType::IntegratedGpu
-            )
-        })
-        .count();
+        .filter(|d| is_gpu(d.device_type) && d.memory_total >= MIN_GPU_MEMORY_BYTES)
+        .map(|d| d.index)
+        .collect();
+
     eprintln!("[ai] ggml backend devices ({} found, {gpu_count} GPU):", devices.len());
     for d in &devices {
+        let below_minimum = is_gpu(d.device_type) && d.memory_total < MIN_GPU_MEMORY_BYTES;
         eprintln!(
-            "[ai]   [{}] {} ({}) via {} - {:?}, {} MiB free / {} MiB total",
+            "[ai]   [{}] {} ({}) via {} - {:?}, {} MiB free / {} MiB total{}",
             d.index,
             d.name,
             d.description,
@@ -132,6 +157,7 @@ fn log_backend_devices() {
             d.device_type,
             d.memory_free / 1024 / 1024,
             d.memory_total / 1024 / 1024,
+            if below_minimum { " (below the 3 GiB minimum - will not be used)" } else { "" },
         );
     }
     if gpu_count == 0 {
@@ -139,7 +165,13 @@ fn log_backend_devices() {
             "[ai] no GPU backend compiled in (or no GPU detected) - running on CPU. \
              See README for how to enable GPU acceleration for your hardware."
         );
+    } else if qualifying_gpus.is_empty() {
+        eprintln!(
+            "[ai] {gpu_count} GPU device(s) found, but none has at least 3 GiB of memory \
+             (needed for this ~2.7 GB model plus its KV cache/compute buffers) - running on CPU instead."
+        );
     }
+    qualifying_gpus
 }
 
 fn run_engine_thread(
@@ -151,8 +183,18 @@ fn run_engine_thread(
     let loaded = LlamaBackend::init()
         .map_err(|e| InferenceError::Backend(e.to_string()))
         .and_then(|backend| {
-            log_backend_devices();
-            let model_params = LlamaModelParams::default().with_n_gpu_layers(GPU_LAYERS_ALL);
+            let qualifying_gpus = log_backend_devices_and_pick_gpus();
+            let n_gpu_layers = if qualifying_gpus.is_empty() { 0 } else { GPU_LAYERS_ALL };
+            let mut model_params = LlamaModelParams::default().with_n_gpu_layers(n_gpu_layers);
+            if !qualifying_gpus.is_empty() {
+                // Restrict offload to the GPUs that actually passed the
+                // memory check - without this, llama.cpp would still be
+                // free to also try splitting across any GPU present
+                // (including ones we just excluded for being too small).
+                model_params = model_params
+                    .with_devices(&qualifying_gpus)
+                    .map_err(|e| InferenceError::Backend(e.to_string()))?;
+            }
             let model = LlamaModel::load_from_file(&backend, &model_path, &model_params).map_err(|e| {
                 InferenceError::ModelLoad {
                     path: model_path.clone(),
