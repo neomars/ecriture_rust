@@ -1,0 +1,122 @@
+name: Build
+
+# Produces the actual distributable app for each OS: a Windows .exe
+# (NSIS installer), a macOS .dmg, and a Linux .deb - each one built with
+# GPU auto-detection baked in (gpu-vulkan on Linux/Windows, gpu-metal on
+# macOS - see the README's "GPU acceleration" section for why), so the
+# same binary uses the GPU when the machine running it has one and falls
+# back to CPU otherwise, decided at runtime, not at build time.
+#
+# Run it by pushing a `v*` tag for a real release, or manually via the
+# "Run workflow" button (Actions tab) to test a build without tagging
+# anything.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-24.04
+            name: linux
+            package_script: package:linux
+          - platform: windows-latest
+            name: windows
+            package_script: package:windows
+          - platform: macos-latest
+            name: macos
+            package_script: package:macos
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Linux: Tauri's own GTK/WebKit prerequisites, plus this
+      # project's own (llama.cpp's build needs cmake + clang/libclang for
+      # bindgen; gpu-vulkan needs the Vulkan loader + a GLSL->SPIR-V
+      # compiler - see README "GPU acceleration"). Verified working with
+      # this exact package list on Ubuntu 24.04.
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            cmake \
+            clang \
+            libclang-dev \
+            libvulkan-dev \
+            glslc
+
+      # --- Windows: gpu-vulkan needs the Vulkan SDK installed with
+      # VULKAN_SDK set at build time (see README) - cmake/clang/MSVC
+      # already ship on the windows-latest runner image.
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: humbletim/setup-vulkan-sdk@v1.2.0
+        with:
+          vulkan-query-version: latest
+          vulkan-components: Vulkan-Headers, Vulkan-Loader, Glslang
+          vulkan-use-cache: true
+
+      # --- macOS: gpu-metal needs nothing beyond Xcode's command line
+      # tools (already on the runner) except cmake, which the README also
+      # calls out as not always preinstalled.
+      - name: Install cmake (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: brew install cmake
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ecriture-rust/ecriture-core
+            ecriture-rust/src-tauri
+
+      - name: Install npm dependencies
+        run: npm install
+
+      # bindgen's libclang doesn't always find its own bundled headers on
+      # a fresh install - see the README's "stdbool.h file not found"
+      # troubleshooting note.
+      - name: Point bindgen at libclang's own headers (Linux)
+        if: matrix.platform == 'ubuntu-24.04'
+        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(clang -print-resource-dir)/include" >> "$GITHUB_ENV"
+
+      - name: Build the app
+        run: npm run ${{ matrix.package_script }}
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecriture-rust-${{ matrix.name }}
+          path: ecriture-rust/src-tauri/target/release/bundle/
+          if-no-files-found: warn

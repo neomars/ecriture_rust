@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "start": "bash scripts/dev-with-gpu.sh",
-    "package:linux": "tauri build --features gpu-vulkan",
-    "package:windows": "set LLAMA_STATIC_CRT=1 && tauri build --features gpu-vulkan"
+    "package:linux": "tauri build --features gpu-vulkan --bundles deb",
+    "package:windows": "set LLAMA_STATIC_CRT=1 && tauri build --features gpu-vulkan --bundles nsis",
+    "package:macos": "tauri build --features gpu-metal --bundles dmg"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
