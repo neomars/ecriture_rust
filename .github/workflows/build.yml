@@ -31,7 +31,7 @@ jobs:
           - platform: windows-latest
             name: windows
             package_script: package:windows
-          - platform: macos-latest
+          - platform: macos-14
             name: macos
             package_script: package:macos
 
@@ -66,7 +66,8 @@ jobs:
             clang \
             libclang-dev \
             libvulkan-dev \
-            glslc
+            glslc \
+            glslang-tools
 
       # --- Windows: gpu-vulkan needs the Vulkan SDK installed with
       # VULKAN_SDK set at build time (see README) - cmake/clang/MSVC
@@ -76,14 +77,19 @@ jobs:
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
           vulkan-query-version: latest
-          vulkan-components: Vulkan-Headers, Vulkan-Loader, Glslang
+          vulkan-components: Vulkan-Headers, Vulkan-Loader, shaderc
           vulkan-use-cache: true
 
       # --- macOS: gpu-metal needs nothing beyond Xcode's command line
       # tools (already on the runner) except cmake, which the README also
-      # calls out as not always preinstalled.
+      # calls out as not always preinstalled. Pinned to macos-14 rather
+      # than macos-latest: its Xcode marks std::filesystem::path::
+      # u8string()/u8path() unavailable (an Apple libc++ regression on
+      # very new SDKs), which llama.cpp's ggml-backend-reg.cpp still uses
+      # - confirmed by a real failed CI run against macos-latest's
+      # Xcode 26.6. No newer llama-cpp-2 release exists yet to dodge it.
       - name: Install cmake (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: matrix.platform == 'macos-14'
         run: brew install cmake
 
       - name: Set up Node.js
