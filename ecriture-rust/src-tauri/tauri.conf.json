@@ -36,6 +36,9 @@
     "resources": {
       "../ecriture-core/resources/lexique.db": "resources/lexique.db",
       "../ecriture-core/resources/default_projects": "resources/default_projects"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
     }
   }
 }
