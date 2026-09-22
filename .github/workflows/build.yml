@@ -196,3 +196,32 @@ jobs:
           name: ecriture-rust-${{ matrix.name }}
           path: ${{ matrix.platform == 'windows-latest' && 'C:\ct\release\bundle\' || 'ecriture-rust/src-tauri/target/release/bundle/' }}
           if-no-files-found: warn
+
+  # Only on a real `v*` tag push (not workflow_dispatch test runs): takes
+  # the three platform artifacts build just produced and publishes them as
+  # a GitHub Release, so downloaders get a normal release page with
+  # permanent links instead of having to dig through this workflow run's
+  # own Artifacts section (which also expire after 90 days).
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ecriture-rust-*
+          path: artifacts
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true
