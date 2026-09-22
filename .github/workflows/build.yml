@@ -15,8 +15,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - "claude/fervent-goodall-xyx4ax" # TEMPORARY: verifying this workflow actually runs; removed once confirmed
   workflow_dispatch: {}
 
 jobs:
