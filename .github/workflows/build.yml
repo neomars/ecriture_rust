@@ -36,7 +36,10 @@ jobs:
             package_script: package:macos
 
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 75
+    # Windows' CARGO_BUILD_JOBS=1 workaround (see that step's comment)
+    # makes its build single-threaded and considerably slower than the
+    # other two platforms' - bumped from 75 to give it room.
+    timeout-minutes: 110
 
     steps:
       - uses: actions/checkout@v4
@@ -80,21 +83,27 @@ jobs:
       # needs) - confirmed against a real failed CI run. The official
       # installer bundles a working Bin/glslc.exe directly.
       #
-      # Also sets CMAKE_BUILD_PARALLEL_LEVEL=1: llama.cpp's ggml-vulkan
-      # CMakeLists builds its "vulkan-shaders-gen" host tool as a separate
-      # CMake ExternalProject, and that sub-project's own
-      # compiler-detection try_compile step doesn't inherit the outer
-      # build's CMAKE_C_FLAGS (which already has /FS, set by
-      # llama-cpp-sys-2's own build.rs) - under a parallel MSVC build this
-      # causes "cannot open program database ...vc145.pdb...; if multiple
-      # CL.EXE write to the same .PDB file, please use /FS", confirmed in
-      # a real failed CI run. Tried setting the CL env var (which cl.exe
-      # itself is documented to read) first, but MSBuild-driven cl.exe
-      # invocations ignore CL/_CL_ entirely - confirmed it had zero effect
-      # in a second real failed run with the identical error. Since
-      # llama-cpp-sys-2's build.rs explicitly reads
-      # CMAKE_BUILD_PARALLEL_LEVEL instead of always auto-detecting CPU
-      # count, forcing it to 1 removes the concurrency window instead.
+      # Also sets CARGO_BUILD_JOBS=1: llama.cpp's ggml-vulkan CMakeLists
+      # builds its "vulkan-shaders-gen" host tool as a separate CMake
+      # ExternalProject, and that sub-project's own compiler-detection
+      # try_compile step doesn't inherit the outer build's CMAKE_C_FLAGS
+      # (which already has /FS, set by llama-cpp-sys-2's own build.rs) -
+      # under a parallel MSVC build this causes "cannot open program
+      # database ...vc145.pdb...; if multiple CL.EXE write to the same
+      # .PDB file, please use /FS", confirmed in a real failed CI run.
+      # Two earlier attempts at a fix, each disproven by a real re-run:
+      # (1) the CL env var, which cl.exe is documented to read - but
+      # MSBuild-driven cl.exe invocations ignore CL/_CL_ entirely; (2)
+      # CMAKE_BUILD_PARALLEL_LEVEL=1 - llama-cpp-sys-2's build.rs does
+      # read that var, but only to pass it as an inert `-D` cache
+      # variable (CMake itself logged it as "unused" - it isn't a real
+      # project setting), while the actual `cmake --build --parallel N`
+      # value comes from the `cmake` crate reading NUM_JOBS, which
+      # Cargo sets itself from its own job count and which neither of
+      # the above touches. CARGO_BUILD_JOBS=1 throttles Cargo's own
+      # parallelism, which is what actually determines NUM_JOBS for
+      # every build script including this one - confirmed by reading
+      # both the cmake crate's and llama-cpp-sys-2's source directly.
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -107,7 +116,7 @@ jobs:
           if ($proc.ExitCode -ne 0) { throw "Vulkan SDK installer exited with code $($proc.ExitCode)" }
           echo "VULKAN_SDK=C:\VulkanSDK\$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "C:\VulkanSDK\$ver\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          echo "CMAKE_BUILD_PARALLEL_LEVEL=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CARGO_BUILD_JOBS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       # --- macOS: gpu-metal needs nothing beyond Xcode's command line
       # tools (already on the runner) except cmake, which the README also
