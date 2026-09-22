@@ -15,8 +15,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - "claude/fervent-goodall-xyx4ax" # TEMPORARY: verifying this workflow actually runs; removed once confirmed
   workflow_dispatch: {}
 
 jobs:
@@ -36,10 +34,7 @@ jobs:
             package_script: package:macos
 
     runs-on: ${{ matrix.platform }}
-    # Windows' CARGO_BUILD_JOBS=1 workaround (see that step's comment)
-    # makes its build single-threaded and considerably slower than the
-    # other two platforms' - bumped from 75 to give it room.
-    timeout-minutes: 110
+    timeout-minutes: 75
 
     steps:
       - uses: actions/checkout@v4
@@ -83,11 +78,11 @@ jobs:
       # needs) - confirmed against a real failed CI run. The official
       # installer bundles a working Bin/glslc.exe directly.
       #
-      # Also sets CARGO_TARGET_DIR to a short path and CARGO_BUILD_JOBS=1:
-      # llama.cpp's ggml-vulkan CMakeLists builds its "vulkan-shaders-gen"
-      # host tool as a separate CMake ExternalProject, which hit two
-      # distinct, layered bugs on Windows, each confirmed against a real
-      # CI run:
+      # Also sets CARGO_TARGET_DIR to a short path and CMAKE_GENERATOR to
+      # Ninja: llama.cpp's ggml-vulkan CMakeLists builds its
+      # "vulkan-shaders-gen" host tool as a separate CMake ExternalProject,
+      # which hit two distinct, layered bugs on Windows, each confirmed
+      # against a real CI run:
       #
       # 1. Its compiler-detection try_compile writes to a deeply nested
       #    scratch path (.../out/build/ggml/src/ggml-vulkan/vulkan-shaders
@@ -103,14 +98,22 @@ jobs:
       #    concurrency theory that wasn't it. CARGO_TARGET_DIR=C:\ct
       #    shortens that path to 211 chars, fixing this one.
       #
-      # 2. With #1 fixed, a second, real issue surfaced: under a parallel
-      #    MSBuild run, the ExternalProject's "install" step started
-      #    before its "configure"/"build" steps had finished ("CMake
-      #    error: Not a file: .../cmake_install.cmake" - the install step
-      #    racing ahead of the step that creates it). CARGO_BUILD_JOBS=1
-      #    serializes Cargo's own build, which also serializes the nested
-      #    cmake --build invocation enough to respect the ExternalProject
-      #    step order.
+      # 2. With #1 fixed, a second, real issue surfaced: the
+      #    ExternalProject's "install" step started before its
+      #    "configure"/"build" steps had finished ("CMake error: Not a
+      #    file: .../cmake_install.cmake" - install racing ahead of the
+      #    step that creates its input). This persisted even with
+      #    CARGO_BUILD_JOBS=1 forcing `cmake --build --parallel 1` - the
+      #    log still showed multiple MSBuild nodes ("1>"/"3>"/"4>")
+      #    interleaving, because CMake's default Visual Studio generator
+      #    models an ExternalProject's steps as custom-build rules within
+      #    one .vcxproj that MSBuild's own task scheduler doesn't
+      #    strictly serialize, regardless of --parallel. Switching to the
+      #    Ninja generator (which the `cmake` crate has first-class
+      #    support for via CMAKE_GENERATOR, confirmed by reading its
+      #    source) builds from a real file-dependency DAG instead, where
+      #    step ordering is enforced correctly - and lets CARGO_BUILD_JOBS
+      #    revert to the default for a faster build.
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -124,7 +127,8 @@ jobs:
           echo "VULKAN_SDK=C:\VulkanSDK\$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "C:\VulkanSDK\$ver\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           echo "CARGO_TARGET_DIR=C:\ct" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "CARGO_BUILD_JOBS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          choco install ninja -y
+          echo "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       # --- macOS: gpu-metal needs nothing beyond Xcode's command line
       # tools (already on the runner) except cmake, which the README also
