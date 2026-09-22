@@ -80,21 +80,27 @@ jobs:
       # needs) - confirmed against a real failed CI run. The official
       # installer bundles a working Bin/glslc.exe directly.
       #
-      # Also sets CMAKE_BUILD_PARALLEL_LEVEL=1: llama.cpp's ggml-vulkan
-      # CMakeLists builds its "vulkan-shaders-gen" host tool as a separate
-      # CMake ExternalProject, and that sub-project's own
-      # compiler-detection try_compile step doesn't inherit the outer
-      # build's CMAKE_C_FLAGS (which already has /FS, set by
-      # llama-cpp-sys-2's own build.rs) - under a parallel MSVC build this
-      # causes "cannot open program database ...vc145.pdb...; if multiple
-      # CL.EXE write to the same .PDB file, please use /FS", confirmed in
-      # a real failed CI run. Tried setting the CL env var (which cl.exe
-      # itself is documented to read) first, but MSBuild-driven cl.exe
-      # invocations ignore CL/_CL_ entirely - confirmed it had zero effect
-      # in a second real failed run with the identical error. Since
-      # llama-cpp-sys-2's build.rs explicitly reads
-      # CMAKE_BUILD_PARALLEL_LEVEL instead of always auto-detecting CPU
-      # count, forcing it to 1 removes the concurrency window instead.
+      # Also sets CARGO_TARGET_DIR to a short path: llama.cpp's
+      # ggml-vulkan CMakeLists builds its "vulkan-shaders-gen" host tool
+      # as a separate CMake ExternalProject, whose own compiler-detection
+      # try_compile writes to a deeply nested scratch path (.../out/build
+      # /ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders
+      # -gen-build/CMakeFiles/CMakeScratch/TryCompile-xxxxxx/.../vc145.pdb).
+      # Under the default target dir (ecriture-rust/src-tauri/target),
+      # that path measured 269 characters in a real failed CI run -
+      # over Windows' 260-char MAX_PATH - and MSVC's cl.exe reports an
+      # inaccessible-too-long path with the exact same misleading text as
+      # a genuine concurrent-write conflict ("cannot open program
+      # database ...; if multiple CL.EXE write to the same .PDB file,
+      # please use /FS"), which sent earlier fixes chasing a concurrency
+      # theory that was never the real cause: neither the CL env var
+      # (MSBuild ignores it), nor CMAKE_BUILD_PARALLEL_LEVEL=1 (inert,
+      # not the setting that controls cmake --build --parallel), nor
+      # CARGO_BUILD_JOBS=1 (genuinely serialized the build - confirmed
+      # via the log showing --parallel 1 - yet the identical error still
+      # happened on the very first, uncontended try_compile) changed
+      # anything, which is what finally ruled concurrency out. Pointing
+      # CARGO_TARGET_DIR at C:\ct shortens the same path to 211 chars.
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -107,7 +113,7 @@ jobs:
           if ($proc.ExitCode -ne 0) { throw "Vulkan SDK installer exited with code $($proc.ExitCode)" }
           echo "VULKAN_SDK=C:\VulkanSDK\$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "C:\VulkanSDK\$ver\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          echo "CMAKE_BUILD_PARALLEL_LEVEL=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CARGO_TARGET_DIR=C:\ct" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       # --- macOS: gpu-metal needs nothing beyond Xcode's command line
       # tools (already on the runner) except cmake, which the README also
@@ -166,10 +172,12 @@ jobs:
         working-directory: ecriture-rust
         run: npm run ${{ matrix.package_script }}
 
+      # Windows builds under CARGO_TARGET_DIR=C:\ct (see the Vulkan SDK
+      # step's comment on why), so its bundle lands outside the checkout.
       - name: Upload build artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ecriture-rust-${{ matrix.name }}
-          path: ecriture-rust/src-tauri/target/release/bundle/
+          path: ${{ matrix.platform == 'windows-latest' && 'C:\ct\release\bundle\' || 'ecriture-rust/src-tauri/target/release/bundle/' }}
           if-no-files-found: warn
