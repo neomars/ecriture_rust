@@ -36,7 +36,10 @@ jobs:
             package_script: package:macos
 
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 75
+    # Windows' CARGO_BUILD_JOBS=1 workaround (see that step's comment)
+    # makes its build single-threaded and considerably slower than the
+    # other two platforms' - bumped from 75 to give it room.
+    timeout-minutes: 110
 
     steps:
       - uses: actions/checkout@v4
@@ -80,27 +83,34 @@ jobs:
       # needs) - confirmed against a real failed CI run. The official
       # installer bundles a working Bin/glslc.exe directly.
       #
-      # Also sets CARGO_TARGET_DIR to a short path: llama.cpp's
-      # ggml-vulkan CMakeLists builds its "vulkan-shaders-gen" host tool
-      # as a separate CMake ExternalProject, whose own compiler-detection
-      # try_compile writes to a deeply nested scratch path (.../out/build
-      # /ggml/src/ggml-vulkan/vulkan-shaders-gen-prefix/src/vulkan-shaders
-      # -gen-build/CMakeFiles/CMakeScratch/TryCompile-xxxxxx/.../vc145.pdb).
-      # Under the default target dir (ecriture-rust/src-tauri/target),
-      # that path measured 269 characters in a real failed CI run -
-      # over Windows' 260-char MAX_PATH - and MSVC's cl.exe reports an
-      # inaccessible-too-long path with the exact same misleading text as
-      # a genuine concurrent-write conflict ("cannot open program
-      # database ...; if multiple CL.EXE write to the same .PDB file,
-      # please use /FS"), which sent earlier fixes chasing a concurrency
-      # theory that was never the real cause: neither the CL env var
-      # (MSBuild ignores it), nor CMAKE_BUILD_PARALLEL_LEVEL=1 (inert,
-      # not the setting that controls cmake --build --parallel), nor
-      # CARGO_BUILD_JOBS=1 (genuinely serialized the build - confirmed
-      # via the log showing --parallel 1 - yet the identical error still
-      # happened on the very first, uncontended try_compile) changed
-      # anything, which is what finally ruled concurrency out. Pointing
-      # CARGO_TARGET_DIR at C:\ct shortens the same path to 211 chars.
+      # Also sets CARGO_TARGET_DIR to a short path and CARGO_BUILD_JOBS=1:
+      # llama.cpp's ggml-vulkan CMakeLists builds its "vulkan-shaders-gen"
+      # host tool as a separate CMake ExternalProject, which hit two
+      # distinct, layered bugs on Windows, each confirmed against a real
+      # CI run:
+      #
+      # 1. Its compiler-detection try_compile writes to a deeply nested
+      #    scratch path (.../out/build/ggml/src/ggml-vulkan/vulkan-shaders
+      #    -gen-prefix/src/vulkan-shaders-gen-build/CMakeFiles/CMakeScratch
+      #    /TryCompile-xxxxxx/.../vc145.pdb). Under the default target dir
+      #    (ecriture-rust/src-tauri/target) that path measured 269
+      #    characters - over Windows' 260-char MAX_PATH - and MSVC's
+      #    cl.exe reports an inaccessible-too-long path with the exact
+      #    same misleading text as a genuine concurrent-write conflict
+      #    ("cannot open program database ...; if multiple CL.EXE write
+      #    to the same .PDB file, please use /FS"), which sent earlier
+      #    fixes (the CL env var, CMAKE_BUILD_PARALLEL_LEVEL=1) chasing a
+      #    concurrency theory that wasn't it. CARGO_TARGET_DIR=C:\ct
+      #    shortens that path to 211 chars, fixing this one.
+      #
+      # 2. With #1 fixed, a second, real issue surfaced: under a parallel
+      #    MSBuild run, the ExternalProject's "install" step started
+      #    before its "configure"/"build" steps had finished ("CMake
+      #    error: Not a file: .../cmake_install.cmake" - the install step
+      #    racing ahead of the step that creates it). CARGO_BUILD_JOBS=1
+      #    serializes Cargo's own build, which also serializes the nested
+      #    cmake --build invocation enough to respect the ExternalProject
+      #    step order.
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -114,6 +124,7 @@ jobs:
           echo "VULKAN_SDK=C:\VulkanSDK\$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "C:\VulkanSDK\$ver\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
           echo "CARGO_TARGET_DIR=C:\ct" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CARGO_BUILD_JOBS=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       # --- macOS: gpu-metal needs nothing beyond Xcode's command line
       # tools (already on the runner) except cmake, which the README also
