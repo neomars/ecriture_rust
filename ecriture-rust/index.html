@@ -218,6 +218,12 @@
                     <span data-i18n="plot_grid">Grille d'intrigue</span>
                 </div>
 
+                <!-- Character Relationship Graph Toggle Button -->
+                <div onclick="selectCharacterGraph()" id="character-graph-menu-item" class="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 cursor-pointer transition-all">
+                    <span>🕸️</span>
+                    <span data-i18n="character_graph">Relations des personnages</span>
+                </div>
+
                 <!-- Characters Group -->
                 <div>
                     <div class="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider px-2 py-1 select-none">
@@ -440,6 +446,26 @@
                     <div id="plot-timeline-flow" class="flex space-x-12 items-start relative z-20 min-w-max pb-12">
                         <!-- Horizontal scenes nodes and connected plot cards dynamically inserted -->
                     </div>
+                </div>
+            </div>
+
+            <!-- CHARACTER RELATIONSHIP GRAPH VIEW -->
+            <div id="character-graph-view" class="hidden flex-1 min-h-0 flex flex-col overflow-hidden bg-slate-50 h-full">
+                <!-- Tab Header -->
+                <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xl">🕸️</span>
+                        <h2 class="text-base font-bold text-slate-800" data-i18n="character_graph_title">Réseau des personnages</h2>
+                    </div>
+                </div>
+
+                <div id="character-graph-container" class="flex-1 overflow-auto p-6 h-full relative min-h-0 min-w-0">
+                    <!-- Dynamic empty-state message, when applicable -->
+                    <div id="character-graph-empty" class="hidden flex-col items-center justify-center h-full text-center max-w-md mx-auto">
+                        <span class="text-4xl mb-2">🕸️</span>
+                        <div id="character-graph-empty-text" class="text-slate-500 font-semibold"></div>
+                    </div>
+                    <svg id="character-graph-svg" class="w-full h-full" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid meet"></svg>
                 </div>
             </div>
 
