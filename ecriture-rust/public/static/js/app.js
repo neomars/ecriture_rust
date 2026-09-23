@@ -860,6 +860,16 @@ window.showConfirm = function(message) {
                 plotGridBtn.className = "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 cursor-pointer transition-all";
             }
 
+            // Highlight active state on Character Graph menu button
+            const charGraphBtn = document.getElementById('character-graph-menu-item');
+            if (charGraphBtn) {
+                if (activeNodeType === "character_graph") {
+                    charGraphBtn.className = "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-bold bg-indigo-50 text-indigo-700 cursor-pointer transition-all";
+                } else {
+                    charGraphBtn.className = "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 cursor-pointer transition-all";
+                }
+            }
+
             // 2. Render Characters
             const charList = document.getElementById('characters-list');
             charList.innerHTML = "";
@@ -1056,6 +1066,7 @@ window.showConfirm = function(message) {
             document.getElementById('editor-view').classList.add('hidden');
             document.getElementById('plot-grid-view').classList.add('hidden');
             document.getElementById('resource-view').classList.add('hidden');
+            if (document.getElementById('character-graph-view')) document.getElementById('character-graph-view').classList.add('hidden');
             if (document.getElementById('stats-view')) document.getElementById('stats-view').classList.add('hidden');
 
             if (viewName === 'editor') {
@@ -1064,6 +1075,8 @@ window.showConfirm = function(message) {
                 document.getElementById('plot-grid-view').classList.remove('hidden');
             } else if (viewName === 'resource') {
                 document.getElementById('resource-view').classList.remove('hidden');
+            } else if (viewName === 'character_graph') {
+                if (document.getElementById('character-graph-view')) document.getElementById('character-graph-view').classList.remove('hidden');
             } else if (viewName === 'stats') {
                 if (document.getElementById('stats-view')) {
                     document.getElementById('stats-view').classList.remove('hidden');
@@ -1746,6 +1759,9 @@ function renderStatisticsDashboard() {
             } else if (activeNodeType === "plot_grid") {
                 switchView('plot');
                 refreshPlotView();
+            } else if (activeNodeType === "character_graph") {
+                switchView('character_graph');
+                renderCharacterGraph();
             }
             applyLockState();
             applyEditorLayoutSettings();
@@ -1971,6 +1987,13 @@ function renderStatisticsDashboard() {
         function selectPlotGrid() {
             activeNodeId = "PLOT_GRID";
             activeNodeType = "plot_grid";
+            renderTree();
+            refreshActiveWorkspace();
+        }
+
+        function selectCharacterGraph() {
+            activeNodeId = "CHARACTER_GRAPH";
+            activeNodeType = "character_graph";
             renderTree();
             refreshActiveWorkspace();
         }
@@ -3720,7 +3743,7 @@ function renderStatisticsDashboard() {
                 return;
             }
 
-            scenes.forEach((scene, index) => {
+            scenes.forEach((scene) => {
                 const sceneCol = document.createElement('div');
                 sceneCol.className = "flex flex-col items-center shrink-0 w-52";
 
@@ -3728,7 +3751,6 @@ function renderStatisticsDashboard() {
                 let sceneHeaderHtml = `
                     <div class="px-4 py-2.5 bg-teal-600 text-white rounded-xl shadow-md text-xs font-bold text-center w-52 border border-teal-500/20 relative">
                         <div class="text-[9px] uppercase tracking-wider text-teal-100/80 truncate mb-1" title="${scene.chapterTitle || ''}">${scene.chapterTitle || ''}</div>
-                        <div class="uppercase tracking-wider opacity-90">${window.activeLang === 'fr' ? 'Scène' : 'Scene'} ${index + 1}</div>
                         <div class="truncate text-sm font-georgia mt-0.5" title="${scene.title}">${scene.title}</div>
                         <div class="absolute -bottom-3 left-1/2 transform -translate-x-1/2 bg-teal-600 text-white border-2 border-slate-100 rounded-full w-6 h-6 flex items-center justify-center text-[10px] font-bold shadow-xs">↓</div>
                     </div>
@@ -3886,6 +3908,138 @@ function renderStatisticsDashboard() {
                     canvas.appendChild(path);
                 });
             });
+        }
+
+        // CHARACTER RELATIONSHIP GRAPH
+        // Renders every character as a node on a circle, connected by lines
+        // for each entry in their `relations` array (deduping reciprocal
+        // pairs so a relation defined on either side only draws one line).
+        function renderCharacterGraph() {
+            const svg = document.getElementById('character-graph-svg');
+            const emptyEl = document.getElementById('character-graph-empty');
+            const emptyText = document.getElementById('character-graph-empty-text');
+            const container = document.getElementById('character-graph-container');
+            if (!svg || !emptyEl || !emptyText || !container) return;
+
+            const characters = (projectData.characters || []).map(c => ensureCharacterFields(c));
+            const hint = document.getElementById('character-graph-hint');
+
+            if (characters.length === 0) {
+                svg.classList.add('hidden');
+                emptyEl.classList.remove('hidden');
+                emptyEl.classList.add('flex');
+                emptyText.textContent = translations["no_characters_yet"] || "Aucun personnage créé";
+                if (hint) hint.classList.add('hidden');
+                return;
+            }
+
+            svg.classList.remove('hidden');
+            emptyEl.classList.add('hidden');
+            emptyEl.classList.remove('flex');
+
+            // Collect unique relation edges (dedupe A->B / B->A into one line)
+            const edges = [];
+            const seenPairs = new Set();
+            characters.forEach(char => {
+                (char.relations || []).forEach(rel => {
+                    if (!rel.target_id || rel.target_id === char.id) return;
+                    const target = characters.find(c => c.id === rel.target_id);
+                    if (!target) return;
+                    const pairKey = [char.id, rel.target_id].sort().join('|');
+                    if (seenPairs.has(pairKey)) return;
+                    seenPairs.add(pairKey);
+                    edges.push({ source: char, target, type: rel.type || '', description: rel.description || '' });
+                });
+            });
+
+            // Circular layout within the fixed 800x800 viewBox
+            const size = 800;
+            const cx = size / 2;
+            const cy = size / 2;
+            const radius = characters.length <= 1 ? 0 : Math.min(320, 130 + characters.length * 12);
+            const nodeR = characters.length > 10 ? 26 : 34;
+
+            const positions = {};
+            characters.forEach((char, i) => {
+                const angle = (2 * Math.PI * i) / characters.length - Math.PI / 2;
+                positions[char.id] = {
+                    x: cx + radius * Math.cos(angle),
+                    y: cy + radius * Math.sin(angle),
+                };
+            });
+            if (characters.length === 1) {
+                positions[characters[0].id] = { x: cx, y: cy };
+            }
+
+            let svgContent = '';
+
+            // Edges, drawn first so nodes sit on top
+            edges.forEach(edge => {
+                const p1 = positions[edge.source.id];
+                const p2 = positions[edge.target.id];
+                if (!p1 || !p2) return;
+                const midX = (p1.x + p2.x) / 2;
+                const midY = (p1.y + p2.y) / 2;
+                const label = escapeHtml(edge.type || '');
+                const titleText = escapeHtml(`${edge.source.name} ↔ ${edge.target.name}${edge.description ? ' : ' + edge.description : ''}`);
+
+                svgContent += `
+                    <line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#a5b4fc" stroke-width="2" opacity="0.8">
+                        <title>${titleText}</title>
+                    </line>
+                `;
+
+                if (label) {
+                    const labelWidth = Math.max(24, label.length * 5.8 + 12);
+                    svgContent += `
+                        <g>
+                            <rect x="${midX - labelWidth / 2}" y="${midY - 10}" width="${labelWidth}" height="18" rx="9" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"></rect>
+                            <text x="${midX}" y="${midY + 3}" text-anchor="middle" font-size="9" font-weight="700" fill="#4338ca" style="text-transform: uppercase; letter-spacing: 0.02em;">${label}</text>
+                        </g>
+                    `;
+                }
+            });
+
+            // Character nodes
+            characters.forEach(char => {
+                const p = positions[char.id];
+                if (!p) return;
+                const initial = escapeHtml((char.name || '?').trim().charAt(0).toUpperCase() || '?');
+                const name = escapeHtml(char.name || '');
+                const role = escapeHtml(char.role || '');
+                const truncatedName = name.length > 18 ? name.slice(0, 17) + '…' : name;
+                const truncatedRole = role.length > 22 ? role.slice(0, 21) + '…' : role;
+
+                svgContent += `
+                    <g onclick="selectCharacter('${char.id}')" style="cursor: pointer;" class="character-graph-node">
+                        <circle cx="${p.x}" cy="${p.y}" r="${nodeR}" fill="#0d9488" stroke="#ffffff" stroke-width="3"></circle>
+                        <text x="${p.x}" y="${p.y + 6}" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">${initial}</text>
+                        <text x="${p.x}" y="${p.y + nodeR + 16}" text-anchor="middle" font-size="11" font-weight="700" fill="#1e293b">${truncatedName}</text>
+                        ${role ? `<text x="${p.x}" y="${p.y + nodeR + 29}" text-anchor="middle" font-size="9" fill="#64748b">${truncatedRole}</text>` : ''}
+                        <title>${name}${role ? ' — ' + role : ''}</title>
+                    </g>
+                `;
+            });
+
+            svg.innerHTML = svgContent;
+
+            // Inline hint when characters exist but no relation has been
+            // defined yet, so the empty graph still explains what to do
+            // without blocking the nodes themselves.
+            if (edges.length === 0) {
+                if (hint) {
+                    hint.textContent = translations["no_relations_yet"] || "Aucune relation entre personnages définie. Ouvrez un personnage pour en ajouter.";
+                    hint.classList.remove('hidden');
+                } else {
+                    const newHint = document.createElement('div');
+                    newHint.id = 'character-graph-hint';
+                    newHint.className = 'absolute top-6 left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-4 py-2 rounded-lg shadow-sm z-10';
+                    newHint.textContent = translations["no_relations_yet"] || "Aucune relation entre personnages définie. Ouvrez un personnage pour en ajouter.";
+                    container.appendChild(newHint);
+                }
+            } else if (hint) {
+                hint.classList.add('hidden');
+            }
         }
 
         // PLOT CARDS INTERACTIONS

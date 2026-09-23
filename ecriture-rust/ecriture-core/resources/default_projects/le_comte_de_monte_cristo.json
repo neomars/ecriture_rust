@@ -1,29 +1,62 @@
 {
-    "settings": {
-        "daily_goal": 500,
-        "daily_written": 0,
-        "lang": "fr",
-        "overall_goal": 50000,
-        "overall_written": 469161,
-        "title": "Le Comte de Monte-Cristo"
-    },
     "characters": [
         {
             "description": "Jeune marin prometteur de dix-neuf ans, droit, honnête et naïf. Il devient le Comte de Monte-Cristo.",
             "id": "char_1",
             "name": "Edmond Dantès",
+            "relations": [
+                {
+                    "description": "Ils s'aiment et doivent se marier avant l'arrestation d'Edmond.",
+                    "target_id": "char_2",
+                    "type": "Fiancée"
+                },
+                {
+                    "description": "Danglars rédige la lettre de dénonciation qui envoie Edmond au Château d'If.",
+                    "target_id": "char_3",
+                    "type": "Traître"
+                },
+                {
+                    "description": "Fernand, amoureux de Mercédès, participe au complot par jalousie.",
+                    "target_id": "char_4",
+                    "type": "Rival"
+                },
+                {
+                    "description": "Villefort l'envoie au Château d'If pour protéger son propre père, secrètement bonapartiste.",
+                    "target_id": "char_5",
+                    "type": "Bourreau"
+                },
+                {
+                    "description": "Faria, compagnon de captivité, lui révèle le trésor de Monte-Cristo et l'instruit.",
+                    "target_id": "char_6",
+                    "type": "Mentor"
+                }
+            ],
             "role": "Protagoniste"
         },
         {
             "description": "La belle Catalane, fiancée d'Edmond Dantès. Elle finira par épouser Fernand Mondego.",
             "id": "char_2",
             "name": "Mercédès Herrera",
+            "relations": [
+                {
+                    "description": "Après la disparition d'Edmond, Mercédès finit par épouser Fernand.",
+                    "target_id": "char_4",
+                    "type": "Futur mari"
+                }
+            ],
             "role": "Intérêt amoureux"
         },
         {
             "description": "Comptable sur Le Pharaon, jaloux du succès de Dantès. Il rédige la lettre de dénonciation.",
             "id": "char_3",
             "name": "Danglars",
+            "relations": [
+                {
+                    "description": "Danglars et Fernand rédigent ensemble la lettre de dénonciation.",
+                    "target_id": "char_4",
+                    "type": "Complices"
+                }
+            ],
             "role": "Antagoniste"
         },
         {
@@ -1833,6 +1866,14 @@
                 "title": "Trahison"
             }
         ]
+    },
+    "settings": {
+        "daily_goal": 500,
+        "daily_written": 0,
+        "lang": "fr",
+        "overall_goal": 50000,
+        "overall_written": 469161,
+        "title": "Le Comte de Monte-Cristo"
     },
     "story_notes": [
         {
